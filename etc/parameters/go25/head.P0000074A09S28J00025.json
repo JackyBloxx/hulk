@@ -1,5 +1,8 @@
 {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 4dc77beb (parameter fix)
   "camera_matrix_parameters": {
     "calibration": {
       "correction_in_camera_bottom": [
@@ -17,6 +20,7 @@
         0.017871161922812462,
         0.00945789646357298
       ]
+<<<<<<< HEAD
     }
   }
 }
@@ -44,3 +48,8 @@
   }
 }
 >>>>>>> 5bb4a0bd (34 40 25 29 28 27 41)
+=======
+    }
+  }
+}
+>>>>>>> 4dc77beb (parameter fix)
