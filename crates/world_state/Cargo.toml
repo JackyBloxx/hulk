@@ -7,12 +7,15 @@ homepage.workspace = true
 
 [dependencies]
 ball_filter = { workspace = true }
+booster = { workspace = true }
 color-eyre = { workspace = true }
 context_attribute = { workspace = true }
 coordinate_systems = { workspace = true }
 filtering = { workspace = true }
 framework = { workspace = true }
+geometry = { workspace = true }
 hardware = { workspace = true }
+kinematics = { workspace = true }
 linear_algebra = { workspace = true }
 nalgebra = { workspace = true }
 projection = { workspace = true }

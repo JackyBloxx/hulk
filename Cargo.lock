@@ -10352,12 +10352,15 @@ name = "world_state"
 version = "0.1.0"
 dependencies = [
  "ball_filter",
+ "booster",
  "color-eyre",
  "context_attribute",
  "coordinate_systems",
  "filtering",
  "framework",
+ "geometry",
  "hardware",
+ "kinematics",
  "linear_algebra",
  "nalgebra",
  "projection",
