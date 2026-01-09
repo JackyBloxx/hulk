@@ -114,14 +114,6 @@ pub fn collect_hulk_cyclers(root: impl AsRef<Path>) -> Result<Cyclers, Error> {
                 execution_time_warning_threshold: Some(Duration::from_secs_f32(1.0 / 83.0)),
             },
             CyclerManifest {
-                name: "Behavior",
-                kind: CyclerKind::Perception,
-                instances: vec![""],
-                setup_nodes: vec!["behavior::trigger"],
-                nodes: vec!["behavior::walk_to_ball"],
-                execution_time_warning_threshold: Some(Duration::from_secs_f32(1.0 / 83.0)),
-            },
-            CyclerManifest {
                 name: "WorldState",
                 kind: CyclerKind::RealTime,
                 instances: vec![""],
@@ -132,6 +124,7 @@ pub fn collect_hulk_cyclers(root: impl AsRef<Path>) -> Result<Cyclers, Error> {
                     "world_state::camera_matrix_calculator",
                     "world_state::ground_provider",
                     "world_state::kinematics_provider",
+                    "world_state::walk_to_ball",
                 ],
                 execution_time_warning_threshold: Some(Duration::from_secs_f32(1.0 / 83.0)),
             },

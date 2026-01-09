@@ -1,10 +1,10 @@
-use color_eyre::Result;
+use color_eyre::{eyre::OptionExt, Result};
 use linear_algebra::Vector2;
 use serde::{Deserialize, Serialize};
 
 use context_attribute::context;
 use coordinate_systems::Ground;
-use framework::{MainOutput, PerceptionInput};
+use framework::MainOutput;
 use types::{
     ball_detection::BallPercept,
     ball_position::{BallPosition, HypotheticalBallPosition},
@@ -22,7 +22,7 @@ pub struct CreationContext {}
 #[context]
 pub struct CycleContext {
     cycle_time: Input<CycleTime, "cycle_time">,
-    ball_percepts_from_vision: PerceptionInput<Option<Vec<BallPercept>>, "Vision", "balls?">,
+    ball_percepts_from_vision: Input<Option<Vec<BallPercept>>, "balls?">,
 }
 
 #[context]
@@ -39,12 +39,11 @@ impl BallFilter {
         })
     }
 
-    pub fn cycle(&mut self, mut context: CycleContext) -> Result<MainOutputs> {
+    pub fn cycle(&mut self, context: CycleContext) -> Result<MainOutputs> {
         let filtered_ball = context
             .ball_percepts_from_vision
-            .persistent
-            .last_entry()
-            .and_then(|entry| entry.get().last().cloned()??.last());
+            .ok_or_eyre("no ball percept")?
+            .last();
 
         let filtered_ball = match (filtered_ball, self.last_ball_position) {
             (Some(ball_percepts), _) => Some(BallPosition {
@@ -55,6 +54,8 @@ impl BallFilter {
             (None, Some(last_ball_position)) => Some(last_ball_position),
             _ => None,
         };
+
+        self.last_ball_position = filtered_ball;
 
         Ok(MainOutputs {
             ball_position: filtered_ball.into(),
