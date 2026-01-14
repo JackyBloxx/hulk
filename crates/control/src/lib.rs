@@ -2,7 +2,6 @@ pub mod a_star;
 pub mod active_vision;
 pub mod ball_filter;
 pub mod ball_state_composer;
-pub mod behavior;
 pub mod button_filter;
 pub mod calibration_controller;
 pub mod center_of_mass_provider;

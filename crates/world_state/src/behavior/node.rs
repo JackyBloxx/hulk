@@ -55,7 +55,6 @@ pub struct CreationContext {}
 
 #[context]
 pub struct CycleContext {
-    has_ground_contact: Input<bool, "has_ground_contact">,
     world_state: Input<WorldState, "world_state">,
     dribble_path_plan: Input<Option<DribblePathPlan>, "dribble_path_plan?">,
     cycle_time: Input<CycleTime, "cycle_time">,
@@ -142,18 +141,7 @@ impl Behavior {
             self.previous_cycle_role = context.world_state.robot.role;
         }
 
-        let mut actions = vec![
-            Action::Unstiff,
-            Action::Animation,
-            Action::SitDown,
-            Action::Penalize,
-            Action::Initial,
-            Action::FallSafely,
-            Action::StandUp,
-            Action::NoGroundContact,
-            Action::Stand,
-            Action::Calibrate,
-        ];
+        let mut actions = vec![Action::Penalize, Action::Initial, Action::Stand];
 
         if let Some(active_since) = self.active_since {
             let duration_active = now.duration_since(active_since)?;
@@ -164,9 +152,6 @@ impl Behavior {
             }
         }
 
-        if matches!(world_state.robot.player_number, PlayerNumber::One) {
-            actions.push(Action::KeeperMotion);
-        }
         actions.push(Action::InterceptBall);
 
         match world_state.robot.role {
@@ -194,22 +179,7 @@ impl Behavior {
                 }) => actions.push(Action::DefendOpponentCornerKick { side: Side::Right }),
                 _ => actions.push(Action::DefendRight),
             },
-            Role::Keeper => match world_state.filtered_game_controller_state {
-                Some(FilteredGameControllerState {
-                    game_phase: GamePhase::PenaltyShootout { .. },
-                    ..
-                })
-                | Some(FilteredGameControllerState {
-                    game_state: FilteredGameState::Playing { .. },
-                    kicking_team: Some(Team::Opponent),
-                    sub_state: Some(SubState::PenaltyKick),
-                    ..
-                }) => {
-                    actions.push(Action::Jump);
-                    actions.push(Action::PrepareJump);
-                }
-                _ => actions.push(Action::DefendGoal),
-            },
+            Role::Keeper => actions.push(Action::DefendGoal),
             Role::Loser => actions.push(Action::SearchForLostBall),
             Role::MidfielderLeft if should_do_kick_in_pose_detection(world_state) => {
                 actions.push(Action::LookAtReferee);
@@ -284,9 +254,7 @@ impl Behavior {
             .iter()
             .find_map(|action| {
                 let motion_command = match action {
-                    Action::Animation => animation::execute(world_state),
                     Action::Unstiff => unstiff::execute(world_state),
-                    Action::SitDown => sit_down::execute(world_state),
                     Action::Penalize => penalize::execute(world_state),
                     Action::Initial => initial::execute(
                         world_state,
@@ -306,15 +274,10 @@ impl Behavior {
                             .walk_and_stand
                             .normal_distance_to_be_aligned,
                     ),
-                    Action::FallSafely => {
-                        fall_safely::execute(world_state, *context.has_ground_contact)
-                    }
                     Action::StandUp => {
                         stand_up::execute(world_state, context.parameters.maximum_standup_attempts)
                     }
-                    Action::NoGroundContact => no_ground_contact::execute(world_state),
                     Action::LookAround => look_around::execute(world_state),
-                    Action::KeeperMotion => defend.keeper_motion(context.keeper_motion.clone()),
                     Action::InterceptBall => intercept_ball::execute(
                         world_state,
                         *context.intercept_ball_parameters,
@@ -324,9 +287,6 @@ impl Behavior {
                             .walk_and_stand
                             .normal_distance_to_be_aligned,
                     ),
-                    Action::Calibrate => {
-                        calibrate::execute(world_state, *context.use_stand_head_unstiff_calibration)
-                    }
                     Action::DefendGoal => defend.goal(
                         &mut context.path_obstacles_output,
                         *context.defend_walk_speed,
@@ -401,8 +361,6 @@ impl Behavior {
                         *context.dribble_walk_speed,
                         context.parameters.dribbling.distance_to_be_aligned,
                     ),
-                    Action::Jump => jump::execute(world_state),
-                    Action::PrepareJump => prepare_jump::execute(world_state),
                     Action::Search => search::execute(
                         world_state,
                         &walk_path_planner,
