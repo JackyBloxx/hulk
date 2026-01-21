@@ -1,7 +1,6 @@
 pub mod a_star;
 pub mod active_vision;
 pub mod ball_filter;
-pub mod ball_state_composer;
 pub mod button_filter;
 pub mod calibration_controller;
 pub mod center_of_mass_provider;
@@ -38,5 +37,4 @@ pub mod support_foot_estimation;
 pub mod team_ball_receiver;
 pub mod time_to_reach_kick_position;
 pub mod whistle_filter;
-pub mod world_state_composer;
 pub mod zero_moment_point_provider;
