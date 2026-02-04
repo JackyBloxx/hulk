@@ -43,14 +43,14 @@ pub struct CycleContext {
 
     player_number: Parameter<PlayerNumber, "player_number">,
 
-    fall_state: Input<FallState, "fall_state">,
-    has_ground_contact: Input<bool, "has_ground_contact">,
+    //fall_state: Input<FallState, "fall_state">,
+    //has_ground_contact: Input<bool, "has_ground_contact">,
     obstacles: Input<Vec<Obstacle>, "obstacles">,
     rule_obstacles: Input<Vec<RuleObstacle>, "rule_obstacles">,
     primary_state: Input<PrimaryState, "primary_state">,
     role: Input<Role, "role">,
     position_of_interest: Input<Point2<Ground>, "position_of_interest">,
-    calibration_command: Input<Option<CalibrationCommand>, "calibration_command?">,
+    //calibration_command: Input<Option<CalibrationCommand>, "calibration_command?">,
     stand_up_count: CyclerState<u32, "stand_up_count">,
     cycle_time: Input<CycleTime, "cycle_time">,
 }
@@ -71,8 +71,8 @@ impl WorldStateComposer {
             ground_to_field: context.ground_to_field.copied(),
             role: *context.role,
             primary_state: *context.primary_state,
-            fall_state: *context.fall_state,
-            has_ground_contact: *context.has_ground_contact,
+            fall_state: FallState::default(),
+            //has_ground_contact: *context.has_ground_contact,
             player_number: *context.player_number,
             ground_to_upcoming_support: *context.ground_to_upcoming_support,
             stand_up_count: *context.stand_up_count,
@@ -90,7 +90,7 @@ impl WorldStateComposer {
             instant_kick_decisions: context.instant_kick_decisions.cloned(),
             filtered_game_controller_state: context.filtered_game_controller_state.cloned(),
             hypothetical_ball_positions: context.hypothetical_ball_position.clone(),
-            calibration_command: context.calibration_command.copied(),
+            //calibration_command: context.calibration_command.copied(),
             now: context.cycle_time.start_time,
         };
 

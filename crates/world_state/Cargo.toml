@@ -6,6 +6,7 @@ license.workspace = true
 homepage.workspace = true
 
 [dependencies]
+approx = { workspace = true }
 ball_filter = { workspace = true }
 booster = { workspace = true }
 color-eyre = { workspace = true }
@@ -16,11 +17,19 @@ framework = { workspace = true }
 geometry = { workspace = true }
 hardware = { workspace = true }
 hsl_network_messages = { workspace = true }
+hungarian_algorithm = { workspace = true }
+itertools = { workspace = true }
 kinematics = { workspace = true }
 linear_algebra = { workspace = true }
+log = { workspace = true }
 nalgebra = { workspace = true }
+ndarray = { workspace = true }
+ordered-float = { workspace = true }
 projection = { workspace = true }
+proptest = { workspace = true }
 ros2 = { workspace = true }
 serde = { workspace = true }
+smallvec = { workspace = true }
 tokio = { workspace = true }
 types = { workspace = true }
+ndarray-conv = { workspace = true }

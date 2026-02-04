@@ -30,13 +30,11 @@ use types::{
 };
 
 use super::{
-    animation, calibrate,
     defend::{Defend, DefendMode},
-    dribble, fall_safely,
+    dribble,
     head::LookAction,
-    initial, intercept_ball, jump, look_around, look_at_referee, lost_ball, no_ground_contact,
-    penalize, prepare_jump, search, sit_down, stand, stand_up, support, unstiff, walk_to_kick_off,
-    walk_to_penalty_kick,
+    initial, intercept_ball, look_around, look_at_referee, lost_ball, penalize, search, stand,
+    stand_up, support, unstiff, walk_to_kick_off, walk_to_penalty_kick,
     walk_to_pose::{WalkAndStand, WalkPathPlanner},
 };
 
@@ -68,10 +66,9 @@ pub struct CycleContext {
     lost_ball_parameters: Parameter<LostBallParameters, "behavior.lost_ball">,
     intercept_ball_parameters: Parameter<InterceptBallParameters, "behavior.intercept_ball">,
     enable_pose_detection: Parameter<bool, "pose_detection.enable">,
-    keeper_motion: Parameter<KeeperMotionParameters, "keeper_motion">,
-    use_stand_head_unstiff_calibration:
-        Parameter<bool, "calibration_controller.use_stand_head_unstiff_calibration">,
-
+    //keeper_motion: Parameter<KeeperMotionParameters, "keeper_motion">,
+    // use_stand_head_unstiff_calibration:
+    //     Parameter<bool, "calibration_controller.use_stand_head_unstiff_calibration">,
     dribble_walk_speed: Parameter<WalkSpeed, "walk_speed.dribble">,
     initial_poses: Parameter<Players<InitialPose>, "localization.initial_poses">,
     intercept_ball_walk_speed: Parameter<WalkSpeed, "walk_speed.intercept_ball">,

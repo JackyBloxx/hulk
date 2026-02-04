@@ -28,7 +28,7 @@ pub struct WorldState {
     pub kick_decisions: Option<Vec<KickDecision>>,
     pub instant_kick_decisions: Option<Vec<KickDecision>>,
     pub robot: RobotState,
-    pub calibration_command: Option<CalibrationCommand>,
+    //pub calibration_command: Option<CalibrationCommand>,
     pub now: SystemTime,
 }
 
@@ -46,7 +46,7 @@ impl Default for WorldState {
             kick_decisions: Default::default(),
             instant_kick_decisions: Default::default(),
             robot: Default::default(),
-            calibration_command: Default::default(),
+            //calibration_command: Default::default(),
             now: UNIX_EPOCH,
         }
     }
@@ -122,7 +122,7 @@ pub struct RobotState {
     pub role: Role,
     pub primary_state: PrimaryState,
     pub fall_state: FallState,
-    pub has_ground_contact: bool,
+    //pub has_ground_contact: bool,
     pub player_number: PlayerNumber,
     pub ground_to_upcoming_support: Isometry2<Ground, UpcomingSupport>,
     pub stand_up_count: u32,
