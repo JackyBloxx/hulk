@@ -8,7 +8,7 @@ use hsl_network_messages::PlayerNumber;
 use linear_algebra::{Isometry2, Point2};
 use types::{
     ball_position::HypotheticalBallPosition,
-    calibration::CalibrationCommand,
+    //calibration::CalibrationCommand,
     cycle_time::CycleTime,
     fall_state::FallState,
     filtered_game_controller_state::FilteredGameControllerState,

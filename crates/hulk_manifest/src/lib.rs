@@ -72,6 +72,8 @@ pub fn collect_hulk_cyclers(root: impl AsRef<Path>) -> Result<Cyclers, Error> {
                     "world_state::rule_obstacle_composer",
                     "world_state::primary_state_filter",
                     "world_state::active_vision",
+                    "world_state::referee_position_provider",
+                    "world_state::penalty_shot_direction_estimation",
                 ],
                 execution_time_warning_threshold: Some(Duration::from_secs_f32(1.0 / 100.0)),
             },

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use context_attribute::context;
 use coordinate_systems::Field;
 use framework::{AdditionalOutput, MainOutput};
-use hsl_network_messages::{GamePhase, PlayerNumber, SubState, Team};
+use hsl_network_messages::{PlayerNumber, SubState, Team};
 use linear_algebra::{point, Point2};
 use types::{
     action::Action,
@@ -19,8 +19,7 @@ use types::{
     kick_decision::DecisionParameters,
     motion_command::{MotionCommand, WalkSpeed},
     parameters::{
-        BehaviorParameters, InWalkKicksParameters, InterceptBallParameters, KeeperMotionParameters,
-        LostBallParameters,
+        BehaviorParameters, InWalkKicksParameters, InterceptBallParameters, LostBallParameters,
     },
     path_obstacles::PathObstacle,
     players::Players,
