@@ -4,6 +4,7 @@ use std::{
 };
 
 use approx::assert_relative_eq;
+use booster::{FallDownState, FallDownStateType};
 use color_eyre::{eyre::Context, Result};
 use geometry::line_segment::LineSegment;
 use linear_algebra::{distance, point, IntoTransform, Isometry, Isometry2, Pose2};
@@ -18,7 +19,6 @@ use framework::{AdditionalOutput, HistoricInput, MainOutput, PerceptionInput};
 use hsl_network_messages::{GamePhase, Penalty, PlayerNumber, SubState, Team};
 use types::{
     cycle_time::CycleTime,
-    fall_state::FallState,
     field_dimensions::{FieldDimensions, GlobalFieldSide},
     field_marks::{field_marks_from_field_dimensions, CorrespondencePoints, Direction, FieldMark},
     filtered_game_controller_state::FilteredGameControllerState,
@@ -65,9 +65,8 @@ pub struct CycleContext {
 
     filtered_game_controller_state:
         Input<Option<FilteredGameControllerState>, "filtered_game_controller_state?">,
-    has_ground_contact: Input<bool, "has_ground_contact">,
     primary_state: Input<PrimaryState, "primary_state">,
-    fall_state: Input<FallState, "fall_state">,
+    fall_down_state: Input<FallDownState, "FallDownState", "fall_down_state">,
     sensor_data: Input<SensorData, "sensor_data">,
 
     circle_measurement_noise: Parameter<Vector2<f32>, "localization.circle_measurement_noise">,
@@ -360,7 +359,7 @@ impl Localization {
                 }
                 if *context.use_line_measurements
                     && !getting_up
-                    && *context.fall_state == FallState::Upright
+                    && context.fall_down_state.fall_down_state == FallDownStateType::IsReady
                 {
                     let ground_to_field: Isometry2<Ground, Field> =
                         scored_state.state.as_isometry().framed_transform();
@@ -574,9 +573,10 @@ impl Localization {
         self.modify_state(&context, sub_state, kicking_team);
         self.last_primary_state = primary_state;
 
-        if primary_state == PrimaryState::Penalized && !context.has_ground_contact {
-            self.was_picked_up_while_penalized = true;
-        }
+        // TODO: handle pick-up
+        // if primary_state == PrimaryState::Penalized && !context.has_ground_contact {
+        //     self.was_picked_up_while_penalized = true;
+        // }
 
         let ground_to_field = match primary_state {
             PrimaryState::Initial | PrimaryState::Standby => Some(

@@ -141,7 +141,8 @@ pub fn execute(
             &world_state.rule_obstacles,
             path_obstacles_output,
         );
-        let is_reached = path.length() < parameters.position_reached_distance;
+        let path_length: f32 = path.segments.iter().map(|segment| segment.length()).sum();
+        let is_reached = path_length < parameters.position_reached_distance;
         if is_reached {
             let search_duration = cycle_start_time
                 .duration_since(UNIX_EPOCH)
