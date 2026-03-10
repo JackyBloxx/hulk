@@ -483,7 +483,7 @@ impl MotionRuntimeInteface for MujocoHardwareInterface {
 
 impl OdometerInterface for MujocoHardwareInterface {
     fn get_odometer(&self) -> Result<booster::Odometer> {
-        todo!()
+        Ok(Default::default()) //TODO: implement odometer interface
     }
 }
 
