@@ -3,7 +3,9 @@ use types::primary_state::PrimaryState;
 use crate::{
     action,
     behavior::{
-        action::{injected_motion_command, prepare, stand, stand_up, walk_to_ball},
+        action::{
+            injected_motion_command, prepare, stand, stand_up, walk_to_ball, walk_to_voronoi,
+        },
         behavior_tree::Node,
         condition::{has_ball_position, is_fallen, is_primary_state},
         node::CaptainBlackboard,
@@ -40,7 +42,7 @@ pub fn create_tree() -> Node<CaptainBlackboard> {
         ),
         sequence!(
             condition!(is_primary_state, PrimaryState::Playing),
-            playing_subtree()
+            action!(walk_to_voronoi)
         ),
         Node::Failure
     )

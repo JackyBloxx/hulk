@@ -50,6 +50,7 @@ pub struct BehaviorParameters {
     pub optional_roles: Vec<Role>,
     pub maximum_lookaround_duration: Duration,
     pub kicking: KickingParameters,
+    pub fake_robot_position: Vec<Point2<Field>>,
 }
 
 #[derive(
