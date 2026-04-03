@@ -52,7 +52,7 @@ pub fn walk_to_ball(context: &mut Blackboard) -> Status {
     }
 }
 
-pub fn walk_to_voronoi(context: &mut CaptainBlackboard) -> Status {
+pub fn walk_to_voronoi(context: &mut Blackboard) -> Status {
     let own_centroid = context
         .world_state
         .centroids
