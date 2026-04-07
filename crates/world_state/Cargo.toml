@@ -34,7 +34,6 @@ serde = { workspace = true }
 smallvec = { workspace = true }
 tokio = { workspace = true }
 types = { workspace = true }
-spade = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

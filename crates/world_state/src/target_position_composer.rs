@@ -41,6 +41,7 @@ impl TargetPositionComposer {
             let half_length = context.field_dimensions.length / 2.0;
             let half_width = context.field_dimensions.width / 2.0;
 
+            // TODO: Import the other Robot positions
             let mut sites = vec![(pose.position().x(), pose.position().y())];
             for fake_position in context.fake_robot_position.into_iter() {
                 sites.push((fake_position.x(), fake_position.y()));
@@ -124,24 +125,16 @@ fn clip_polygon_to_bisector_half_plane(
         match (current_inside, next_inside) {
             (true, true) => clipped.push(next),
             (true, false) => {
-                if let Some(intersection) = edge_half_plane_intersection(
-                    current,
-                    next,
-                    current_value,
-                    next_value,
-                    f32::EPSILON,
-                ) {
+                if let Some(intersection) =
+                    edge_half_plane_intersection(current, next, current_value, next_value)
+                {
                     clipped.push(intersection);
                 }
             }
             (false, true) => {
-                if let Some(intersection) = edge_half_plane_intersection(
-                    current,
-                    next,
-                    current_value,
-                    next_value,
-                    f32::EPSILON,
-                ) {
+                if let Some(intersection) =
+                    edge_half_plane_intersection(current, next, current_value, next_value)
+                {
                     clipped.push(intersection);
                 }
                 clipped.push(next);
@@ -158,10 +151,9 @@ fn edge_half_plane_intersection(
     end: Point2<Field>,
     start_value: f32,
     end_value: f32,
-    epsilon: f32,
 ) -> Option<Point2<Field>> {
     let denominator = start_value - end_value;
-    if denominator.abs() <= epsilon {
+    if denominator.abs() <= f32::EPSILON {
         return None;
     }
 
@@ -219,7 +211,7 @@ fn calculate_centroid_field(vertices: &[Point2<Field>]) -> Option<Point2<Field>>
     }
 
     let final_area = area / 2.0;
-    if final_area.abs() < 1e-6 {
+    if final_area.abs() < f32::EPSILON {
         return None;
     }
 

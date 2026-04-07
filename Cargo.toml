@@ -217,7 +217,6 @@ simba = "0.9.0"
 simulation_message = { path = "crates/simulation_message" }
 smallvec = "1.14.0"
 source_analyzer = { path = "crates/source_analyzer" }
-spade = "2.15.1"
 splines = { version = "=4.2.0", features = ["serde"] }
 syn = { version = "2.0.98", features = ["extra-traits", "full"] }
 systemd = "0.10.0"
