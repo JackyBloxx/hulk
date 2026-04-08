@@ -37,6 +37,14 @@ pub struct WhistleDetectionParameters {
 #[derive(
     Clone, Debug, Default, Deserialize, Serialize, PathSerialize, PathDeserialize, PathIntrospect,
 )]
+pub struct VoronoiParameters {
+    pub fake_robot_position: Vec<Point2<Field>>,
+    pub orientation_bias: f32,
+}
+
+#[derive(
+    Clone, Debug, Default, Deserialize, Serialize, PathSerialize, PathDeserialize, PathIntrospect,
+)]
 pub struct BehaviorParameters {
     pub injected_motion_command: Option<MotionCommand>,
     pub lost_ball: LostBallParameters,
@@ -50,7 +58,7 @@ pub struct BehaviorParameters {
     pub optional_roles: Vec<Role>,
     pub maximum_lookaround_duration: Duration,
     pub kicking: KickingParameters,
-    pub fake_robot_position: Vec<Point2<Field>>,
+    pub voronoi: VoronoiParameters,
 }
 
 #[derive(

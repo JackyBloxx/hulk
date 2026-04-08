@@ -16,7 +16,8 @@ pub struct CreationContext {}
 pub struct CycleContext {
     ground_to_field: Input<Option<Isometry2<Ground, Field>>, "ground_to_field?">,
     field_dimensions: Parameter<FieldDimensions, "field_dimensions">,
-    fake_robot_position: Parameter<Vec<Point2<Field>>, "behavior.fake_robot_position">,
+    fake_robot_position: Parameter<Vec<Point2<Field>>, "behavior.voronoi.fake_robot_position">,
+    voronoi_orientation_bias: Parameter<f32, "behavior.voronoi.orientation_bias">,
 
     input_points: AdditionalOutput<Vec<Point2<Field>>, "voronoi.input_points">,
 }
@@ -25,6 +26,14 @@ pub struct CycleContext {
 pub struct MainOutputs {
     pub centroids: MainOutput<Vec<Option<Point2<Field>>>>,
     pub voronoi_cells: MainOutput<Vec<Vec<Point2<Field>>>>,
+}
+
+#[derive(Clone, Copy)]
+struct VoronoiSite {
+    x: f32,
+    y: f32,
+    forward_x: f32,
+    forward_y: f32,
 }
 
 impl TargetPositionComposer {
@@ -40,21 +49,35 @@ impl TargetPositionComposer {
             let pose = ground_to_field.as_pose();
             let half_length = context.field_dimensions.length / 2.0;
             let half_width = context.field_dimensions.width / 2.0;
+            let orientation = pose.orientation().angle();
+            let own_forward_x = orientation.cos();
+            let own_forward_y = orientation.sin();
+            let orientation_bias = *context.voronoi_orientation_bias;
 
             // TODO: Import the other Robot positions
-            let mut sites = vec![(pose.position().x(), pose.position().y())];
+            let mut sites = vec![VoronoiSite {
+                x: pose.position().x(),
+                y: pose.position().y(),
+                forward_x: own_forward_x,
+                forward_y: own_forward_y,
+            }];
             for fake_position in context.fake_robot_position.into_iter() {
-                sites.push((fake_position.x(), fake_position.y()));
+                sites.push(VoronoiSite {
+                    x: fake_position.x(),
+                    y: fake_position.y(),
+                    forward_x: 0.0,
+                    forward_y: 0.0,
+                });
             }
             context.input_points.fill_if_subscribed(|| {
                 sites
                     .iter()
-                    .map(|(x, y)| point![<Field>, *x, *y])
+                    .map(|site| point![<Field>, site.x, site.y])
                     .collect::<Vec<Point2<Field>>>()
             });
 
             for (index, site) in sites.iter().copied().enumerate() {
-                if site.0.abs() > half_length || site.1.abs() > half_width {
+                if site.x.abs() > half_length || site.y.abs() > half_width {
                     continue;
                 }
 
@@ -64,7 +87,12 @@ impl TargetPositionComposer {
                         continue;
                     }
 
-                    vertices = clip_polygon_to_bisector_half_plane(&vertices, site, other_site);
+                    vertices = clip_polygon_to_bisector_half_plane(
+                        &vertices,
+                        site,
+                        other_site,
+                        orientation_bias,
+                    );
                     if vertices.is_empty() {
                         break;
                     }
@@ -97,18 +125,25 @@ fn field_rectangle(half_length: f32, half_width: f32) -> Vec<Point2<Field>> {
 
 fn clip_polygon_to_bisector_half_plane(
     polygon: &[Point2<Field>],
-    site: (f32, f32),
-    other_site: (f32, f32),
+    site: VoronoiSite,
+    other_site: VoronoiSite,
+    orientation_bias: f32,
 ) -> Vec<Point2<Field>> {
     if polygon.is_empty() {
         return Vec::new();
     }
 
-    let dx = other_site.0 - site.0;
-    let dy = other_site.1 - site.1;
+    // Shift each site along its heading to approximate turn-time cost while keeping linear clipping.
+    let shifted_site_x = site.x + orientation_bias * site.forward_x;
+    let shifted_site_y = site.y + orientation_bias * site.forward_y;
+    let shifted_other_x = other_site.x + orientation_bias * other_site.forward_x;
+    let shifted_other_y = other_site.y + orientation_bias * other_site.forward_y;
+
+    let dx = shifted_other_x - shifted_site_x;
+    let dy = shifted_other_y - shifted_site_y;
     let c = 0.5
-        * ((other_site.0 * other_site.0 + other_site.1 * other_site.1)
-            - (site.0 * site.0 + site.1 * site.1));
+        * ((shifted_other_x * shifted_other_x + shifted_other_y * shifted_other_y)
+            - (shifted_site_x * shifted_site_x + shifted_site_y * shifted_site_y));
 
     let mut clipped = Vec::new();
 
