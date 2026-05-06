@@ -5207,6 +5207,7 @@ dependencies = [
  "tokio",
  "types",
  "vision",
+ "voronoi",
  "walking_inference",
  "world_state",
  "zed",
@@ -5275,6 +5276,7 @@ dependencies = [
  "tokio-util",
  "types",
  "vision",
+ "voronoi",
  "walking_inference",
  "world_state",
 ]
@@ -5330,6 +5332,7 @@ dependencies = [
  "tokio-util",
  "types",
  "vision",
+ "voronoi",
  "walking_inference",
  "world_state",
 ]
@@ -7813,6 +7816,7 @@ dependencies = [
  "serde_json",
  "source_analyzer",
  "types",
+ "voronoi",
  "walking_inference",
 ]
 
