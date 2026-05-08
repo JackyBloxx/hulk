@@ -14,7 +14,7 @@ use crate::{
         node::Blackboard,
         search::{has_suggested_search_position, leuchtturm, walk_to_search_position},
         switch_motion_type::switch_motion_type,
-        walk::{walk_alternatives_subtree, walk_to_ball},
+        walk::{walk_alternatives_subtree, walk_to_ball, walk_to_centroid},
     },
     condition, negation, selection, sequence, subtree,
 };
@@ -57,7 +57,7 @@ pub fn create_tree() -> Node<Blackboard> {
         ),
         sequence!(
             condition!(is_primary_state, PrimaryState::Playing),
-            subtree!(playing_subtree)
+            action!(walk_to_centroid) //subtree!(playing_subtree)
         ),
         Node::Failure
     )
