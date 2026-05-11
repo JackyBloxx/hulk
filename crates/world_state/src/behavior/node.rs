@@ -19,6 +19,7 @@ use types::{
     path_obstacles::PathObstacle,
     world_state::WorldState,
 };
+use voronoi::VoronoiGrid;
 
 use crate::behavior::{
     behavior_tree::Node, motion_assembler::assemble_motion_command, tree::create_tree,
@@ -73,6 +74,7 @@ pub struct Blackboard {
     pub is_injected_motion_command: bool,
     pub body_motion: Option<BodyMotion>,
     pub head_motion: Option<HeadMotion>,
+    pub voronoi_map: Option<VoronoiGrid>,
 }
 
 #[context]
@@ -94,6 +96,7 @@ pub struct CycleContext {
     last_sent_message: AdditionalOutput<HulkMessage, "last_sent_message">,
     path_obstacles_output: AdditionalOutput<Vec<PathObstacle>, "path_obstacles">,
     time_since_last_switch: AdditionalOutput<Duration, "behavior.time_since_last_switch">,
+    voronoi_map: AdditionalOutput<Option<VoronoiGrid>, "behavior.voronoi_map">,
 
     last_motion_command: CyclerState<MotionCommand, "last_motion_command">,
 
@@ -168,6 +171,7 @@ impl Behavior {
             is_injected_motion_command: false,
             body_motion: None,
             head_motion: None,
+            voronoi_map: None,
         };
         let (status, trace) = self.tree.tick_with_trace(&mut blackboard);
 
@@ -213,6 +217,9 @@ impl Behavior {
         context
             .time_since_last_switch
             .fill_if_subscribed(|| blackboard.time_since_last_switch);
+        context
+            .voronoi_map
+            .fill_if_subscribed(|| blackboard.voronoi_map);
 
         Ok(MainOutputs {
             motion_command: motion_command.into(),
