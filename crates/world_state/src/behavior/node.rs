@@ -8,7 +8,7 @@ use coordinate_systems::{Field, Ground};
 use framework::{AdditionalOutput, MainOutput};
 use hardware::NetworkInterface;
 use hsl_network_messages::HulkMessage;
-use linear_algebra::{Point2, Vector2};
+use linear_algebra::{Point2, Pose2, Vector2};
 use serde::{Deserialize, Serialize};
 use types::{
     behavior_tree::NodeTrace,
@@ -64,6 +64,7 @@ pub struct Blackboard {
 
     pub path_obstacles_output: Vec<PathObstacle>,
     pub time_since_last_switch: Duration,
+    pub voronoi_inputs: Vec<Pose2<Field>>,
 
     pub ball: Option<LastBall>,
     pub last_ball: Option<LastBall>,
@@ -97,6 +98,7 @@ pub struct CycleContext {
     path_obstacles_output: AdditionalOutput<Vec<PathObstacle>, "path_obstacles">,
     time_since_last_switch: AdditionalOutput<Duration, "behavior.time_since_last_switch">,
     voronoi_map: AdditionalOutput<Option<VoronoiGrid>, "behavior.voronoi_map">,
+    voronoi_inputs: AdditionalOutput<Vec<Pose2<Field>>, "behavior.voronoi_inputs">,
 
     last_motion_command: CyclerState<MotionCommand, "last_motion_command">,
 
@@ -161,6 +163,7 @@ impl Behavior {
 
             path_obstacles_output: Vec::new(),
             time_since_last_switch: Duration::ZERO,
+            voronoi_inputs: Vec::new(),
 
             ball: self.ball.clone(),
             last_ball: self.last_ball.clone(),
@@ -220,6 +223,9 @@ impl Behavior {
         context
             .voronoi_map
             .fill_if_subscribed(|| blackboard.voronoi_map);
+        context
+            .voronoi_inputs
+            .fill_if_subscribed(|| blackboard.voronoi_inputs);
 
         Ok(MainOutputs {
             motion_command: motion_command.into(),
