@@ -7,7 +7,7 @@ use zenoh::{key_expr::KeyExpr, session::ZenohId};
 
 use crate::qos::{QosDecodeError, QosProfile};
 
-/// Placeholder for empty namespace/enclave.
+/// Placeholder for empty namespace.
 pub const EMPTY_PLACEHOLDER: &str = "%";
 
 /// Liveliness key expression wrapper.
@@ -57,17 +57,15 @@ pub struct NodeEntity {
     pub id: usize,
     pub name: String,
     pub namespace: String,
-    pub enclave: String,
 }
 
 impl NodeEntity {
-    pub fn new(z_id: ZenohId, id: usize, name: String, namespace: String, enclave: String) -> Self {
+    pub fn new(z_id: ZenohId, id: usize, name: String, namespace: String) -> Self {
         Self {
             z_id,
             id,
             name,
             namespace,
-            enclave,
         }
     }
 }
@@ -220,7 +218,6 @@ pub enum EntityConversionError {
     MissingNodeId,
     MissingEntityId,
     MissingEntityKind,
-    MissingEnclave,
     MissingNamespace,
     MissingNodeName,
     MissingTopicName,
