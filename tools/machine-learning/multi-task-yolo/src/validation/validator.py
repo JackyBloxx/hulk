@@ -110,6 +110,13 @@ def validate_hydra_model(
     )
     set_backbone(head_model, backbone, hydra_model.number_of_frozen_modules)
 
+    if not validation_run_folder.exists():
+        validation_run_folder.mkdir(parents=True)
+
+    head_model_yolo_wrapper.save(
+        validation_run_folder / (str(hydra_model) + ".pt")
+    )
+
     head_model_yolo_wrapper.eval()
 
     metrics = head_model_yolo_wrapper.val(
@@ -118,10 +125,6 @@ def validate_hydra_model(
     metrics = cast(DetMetrics, metrics)
 
     save_validation_results(validation_run_folder, metrics.results_dict, config)
-
-    head_model_yolo_wrapper.save(
-        validation_run_folder / (str(hydra_model) + ".pt")
-    )
 
 
 @click.command()
