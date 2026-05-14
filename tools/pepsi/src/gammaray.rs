@@ -37,6 +37,10 @@ pub struct Arguments {
     /// e.g. rust-trt-inference-image.tar
     #[arg(short, long)]
     image_file: Option<PathBuf>,
+
+    /// Use old booster binary
+    #[arg(long)]
+    old: bool,
 }
 
 static PACKAGES: [&str; 2] = ["zenohd", "zenoh-bridge-dds"];
@@ -69,6 +73,7 @@ pub async fn gammaray(arguments: Arguments, repository: &Repository) -> Result<(
                     arguments.image_file.as_deref(),
                     &team,
                     setup_path,
+                    arguments.old,
                 )
             },
         )
@@ -85,6 +90,7 @@ async fn gammaray_robot(
     image_file: Option<&Path>,
     team: &Team,
     setup: &Path,
+    old: bool,
 ) -> Result<()> {
     let robot = Robot::try_new_with_ping(robot.ip).await?;
 
@@ -251,6 +257,16 @@ async fn gammaray_robot(
         .arg(format!("{}:/usr/bin/", robot.address))
         .rsync_with_log("uploading binaries", &progress_bar)
         .await?;
+
+    if !old {
+        robot
+            .ssh_to_robot()?
+            .arg("sudo sed")
+            .arg("--in-place")
+            .arg(format!("'s#hulk_booster .*#hulk_ros_z --robot {} --location lab --parameter-root etc/parameters/ros_z --router tcp/127.0.0.1:7447 \\\\#'", team_robot.number))
+            .arg("/usr/bin/launch-hulk")
+            .ssh_with_log("hacking launch-hulk", &progress_bar).await?;
+    }
 
     robot
         .ssh_to_robot()?
