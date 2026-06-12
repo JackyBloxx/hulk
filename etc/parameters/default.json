@@ -496,7 +496,7 @@
       "distance_for_kick_hysteresis": 1.0,
       "distance_to_look_directly_at_the_ball": 4.0,
       "kick_target_offset_angle": 0.1,
-      "target_distance_kick_power_threshold": 4.0,
+      "target_distance_kick_power_threshold": 0.5,
       "kick_position_ball_distance": 0.3
     },
     "substates": {
@@ -545,7 +545,7 @@
     }
   },
   "field_dimensions": {
-    "ball_radius": 0.095,
+    "ball_radius": 0.08,
     "length": 9.0,
     "width": 6.0,
     "line_width": 0.05,
