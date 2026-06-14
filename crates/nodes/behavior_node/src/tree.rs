@@ -75,7 +75,7 @@ fn playing_subtree() -> Node<Blackboard> {
             negation!(condition!(has_ball_position)),
             subtree!(search_subtree)
         ),
-        //sequence!(condition!(is_closest_to_ball), subtree!(striker_subtree)),
+        sequence!(condition!(is_closest_to_ball), subtree!(striker_subtree)),
         subtree!(supporter_subtree),
     )
 }

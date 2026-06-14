@@ -32,7 +32,7 @@ impl Default for SimulationConfig {
             kick_ball_speed_schlong: 3.0,
             kick_cooldown: Duration::from_millis(750),
             ball_friction_per_second: 0.6,
-            ball_visibility_range: 4.0,
+            ball_visibility_range: 7.0,
             ball_visibility_angle: std::f32::consts::FRAC_PI_2,
             robot_radius: 0.25,
             kick_radius: 0.25,
