@@ -7,7 +7,10 @@ use ordered_float::NotNan;
 use path_serde::{PathDeserialize, PathIntrospect, PathSerialize};
 use ros_z::Message;
 use serde::{Deserialize, Serialize};
-use types::{obstacles::Obstacle, rule_obstacles::RuleObstacle};
+use types::{
+    obstacles::Obstacle, parameters::VoronoiParameters, rule_obstacles::RuleObstacle,
+    world_state::BallState,
+};
 
 type QueueItem = Reverse<(NotNan<f32>, usize, usize)>;
 type Queue = BinaryHeap<QueueItem>;
@@ -76,12 +79,12 @@ impl Ownership {
 }
 
 #[derive(
-    PartialEq,
     Clone,
     Debug,
     Deserialize,
     Serialize,
     Default,
+    PartialEq,
     PathIntrospect,
     PathDeserialize,
     PathSerialize,
@@ -89,14 +92,16 @@ impl Ownership {
 )]
 pub struct VoronoiGrid {
     pub tiles: Vec<Ownership>,
-    pub width_tiles: usize,
-    pub height_tiles: usize,
-    pub resolution: f32,
-    pub min_bound: Point2<Field>,
+    width_tiles: usize,
+    height_tiles: usize,
+    min_bound: Point2<Field>,
+    parameters: VoronoiParameters,
 }
 
 impl VoronoiGrid {
-    pub fn new(width: f32, height: f32, padding: f32, resolution: f32) -> Self {
+    pub fn new(width: f32, height: f32, parameters: VoronoiParameters) -> Self {
+        let padding = parameters.padding;
+        let resolution = parameters.grid_resolution;
         let width_tiles = ((width + 2.0 * padding) / resolution).round() as usize;
         let height_tiles = ((height + 2.0 * padding) / resolution).round() as usize;
         let tile_count = (width_tiles) * (height_tiles);
@@ -105,8 +110,8 @@ impl VoronoiGrid {
             tiles: vec![Ownership::Free; tile_count],
             width_tiles,
             height_tiles,
-            resolution,
             min_bound: point!(-width / 2.0 - padding, -height / 2.0 - padding),
+            parameters,
         }
     }
 
@@ -277,9 +282,85 @@ impl VoronoiGrid {
         }
     }
 
+    pub fn target_position_for_player(
+        &self,
+        player: PlayerNumber,
+        ball: Option<BallState>,
+    ) -> Option<Point2<Field>> {
+        let centroid = self.centroid_for_player(player)?;
+
+        let Some(ball_position) = ball.map(|b| b.ball_in_field) else {
+            return Some(centroid);
+        };
+
+        let field_min_x = self.min_bound.x();
+        let field_min_y = self.min_bound.y();
+        let field_max_x =
+            self.min_bound.x() + self.width_tiles as f32 * self.parameters.grid_resolution;
+        let field_max_y =
+            self.min_bound.y() + self.height_tiles as f32 * self.parameters.grid_resolution;
+        let field_length = field_max_x - field_min_x;
+        let field_width = field_max_y - field_min_y;
+
+        let half_length = field_length * 0.5;
+        let ball_x = ball_position.x();
+        let ball_y = ball_position.y();
+        let side_factor = (ball_x / half_length).clamp(-1.0, 1.0);
+
+        let ball_sigma = (field_length.min(field_width) * self.parameters.ball_sigma_scale)
+            .max(self.parameters.grid_resolution);
+        let inv_two_ball_sigma_sq = 1.0 / (2.0 * ball_sigma * ball_sigma);
+
+        let centroid_sigma = (field_length.min(field_width) * self.parameters.centroid_sigma_scale)
+            .max(self.parameters.grid_resolution);
+        let inv_two_centroid_sigma_sq = 1.0 / (2.0 * centroid_sigma * centroid_sigma);
+
+        let mut sum_x = 0.0;
+        let mut sum_y = 0.0;
+        let mut weight_sum = 0.0;
+
+        for (index, ownership) in self.tiles.iter().copied().enumerate() {
+            if ownership != Ownership::Robot(player) {
+                continue;
+            }
+
+            let point = self.index_to_point(index);
+
+            let forward_norm = point.x() / half_length;
+            let forward_term = self.parameters.forward_weight * side_factor * forward_norm;
+
+            let dx_ball = point.x() - ball_x;
+            let dy_ball = point.y() - ball_y;
+            let ball_term = self.parameters.ball_weight
+                * (-(dx_ball * dx_ball + dy_ball * dy_ball) * inv_two_ball_sigma_sq).exp();
+
+            let dx_centroid = point.x() - centroid.x();
+            let dy_centroid = point.y() - centroid.y();
+            let centroid_term = self.parameters.centroid_weight
+                * (-(dx_centroid * dx_centroid + dy_centroid * dy_centroid)
+                    * inv_two_centroid_sigma_sq)
+                    .exp();
+
+            let weight = self.parameters.base_weight + forward_term + ball_term + centroid_term;
+            if weight <= 0.0 {
+                continue;
+            }
+
+            sum_x += point.x() * weight;
+            sum_y += point.y() * weight;
+            weight_sum += weight;
+        }
+
+        if weight_sum == 0.0 {
+            None
+        } else {
+            Some(point![sum_x / weight_sum, sum_y / weight_sum])
+        }
+    }
+
     fn point_to_index(&self, p: Point2<Field>) -> Option<usize> {
-        let ix = ((p.x() - self.min_bound.x()) / self.resolution).floor() as isize;
-        let iy = ((p.y() - self.min_bound.y()) / self.resolution).floor() as isize;
+        let ix = ((p.x() - self.min_bound.x()) / self.parameters.grid_resolution).floor() as isize;
+        let iy = ((p.y() - self.min_bound.y()) / self.parameters.grid_resolution).floor() as isize;
 
         if (0..self.width_tiles as isize).contains(&ix)
             && (0..self.height_tiles as isize).contains(&iy)
@@ -296,8 +377,12 @@ impl VoronoiGrid {
         let iy = (index / width_tiles) as f32;
 
         point!(
-            self.min_bound.x() + ix * self.resolution + self.resolution / 2.0,
-            self.min_bound.y() + iy * self.resolution + self.resolution / 2.0
+            self.min_bound.x()
+                + ix * self.parameters.grid_resolution
+                + self.parameters.grid_resolution / 2.0,
+            self.min_bound.y()
+                + iy * self.parameters.grid_resolution
+                + self.parameters.grid_resolution / 2.0
         )
     }
 
@@ -312,19 +397,21 @@ impl VoronoiGrid {
             return None;
         }
 
+        let resolution = self.parameters.grid_resolution;
+
         let tile_min_x = self.min_bound.x();
-        let tile_max_x = self.min_bound.x() + self.width_tiles as f32 * self.resolution;
+        let tile_max_x = self.min_bound.x() + self.width_tiles as f32 * resolution;
         let tile_min_y = self.min_bound.y();
-        let tile_max_y = self.min_bound.y() + self.height_tiles as f32 * self.resolution;
+        let tile_max_y = self.min_bound.y() + self.height_tiles as f32 * resolution;
 
         if max_x < tile_min_x || min_x > tile_max_x || max_y < tile_min_y || min_y > tile_max_y {
             return None;
         }
 
-        let mut min_x_index = ((min_x - tile_min_x) / self.resolution).floor() as isize - 1;
-        let mut max_x_index = ((max_x - tile_min_x) / self.resolution).floor() as isize + 1;
-        let mut min_y_index = ((min_y - tile_min_y) / self.resolution).floor() as isize - 1;
-        let mut max_y_index = ((max_y - tile_min_y) / self.resolution).floor() as isize + 1;
+        let mut min_x_index = ((min_x - tile_min_x) / resolution).floor() as isize - 1;
+        let mut max_x_index = ((max_x - tile_min_x) / resolution).floor() as isize + 1;
+        let mut min_y_index = ((min_y - tile_min_y) / resolution).floor() as isize - 1;
+        let mut max_y_index = ((max_y - tile_min_y) / resolution).floor() as isize + 1;
 
         min_x_index = min_x_index.clamp(0, self.width_tiles as isize - 1);
         max_x_index = max_x_index.clamp(0, self.width_tiles as isize - 1);

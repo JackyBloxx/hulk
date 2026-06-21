@@ -25,8 +25,7 @@ pub fn calculate_voronoi_grid(blackboard: &mut Blackboard) -> Status {
         let mut map = VoronoiGrid::new(
             field_dimensions.length,
             field_dimensions.width,
-            voronoi_parameters.padding,
-            voronoi_parameters.grid_resolution,
+            voronoi_parameters.clone(),
         );
         map.initialize_obstacles(obstacles, rule_obstacles, ground_to_field);
         map.multi_source_dijkstra(&sites, voronoi_parameters.orientation_bias);
