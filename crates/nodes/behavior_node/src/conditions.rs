@@ -4,9 +4,8 @@ use linear_algebra::{point, vector};
 use types::{
     filtered_game_controller_state::FilteredGameControllerState, primary_state::PrimaryState,
 };
-use voronoi::Ownership;
 
-use crate::node::Blackboard;
+use crate::{node::Blackboard, voronoi::closest_player_to_ball};
 
 pub fn is_ball_interception_candidate(blackboard: &mut Blackboard) -> bool {
     if let (Some(ball), Some(ground_to_field)) = (
@@ -95,19 +94,7 @@ pub fn is_close_to_ball_aligned(blackboard: &mut Blackboard) -> bool {
 pub fn is_closest_to_ball(blackboard: &mut Blackboard) -> bool {
     let own_player_number = blackboard.world_state.robot.player_number;
 
-    let raw_is_closest =
-        if let (Some(ball), Some(voronoi_map)) = (&blackboard.ball, &blackboard.voronoi_map) {
-            let ownership_at_ball = voronoi_map.ownership_at(ball.position);
-            match ownership_at_ball {
-                Some(Ownership::Robot(player_number)) if player_number == own_player_number => true,
-                Some(Ownership::Blocked) => voronoi_map
-                    .nearest_non_blocked_ownership(ball.position)
-                    .is_some_and(|ownership| ownership == Ownership::Robot(own_player_number)),
-                _ => false,
-            }
-        } else {
-            false
-        };
+    let raw_is_closest = closest_player_to_ball(blackboard) == Some(own_player_number);
 
     let now = blackboard.world_state.now;
     if raw_is_closest {
@@ -203,4 +190,67 @@ pub fn is_last_hulk_standing(blackboard: &mut Blackboard) -> bool {
 
 pub fn is_simple(blackboard: &mut Blackboard) -> bool {
     blackboard.parameters.control.is_simple
+}
+
+#[cfg(test)]
+mod tests {
+    use geometry::circle::Circle;
+    use hsl_network_messages::PlayerNumber;
+    use linear_algebra::{Isometry2, Pose2};
+    use types::{rule_obstacles::RuleObstacle, world_state::PlayerState};
+
+    use crate::{
+        test_utils::{ball_at, blackboard},
+        voronoi::calculate_voronoi_grid,
+    };
+
+    use super::*;
+
+    #[test]
+    fn blocked_ball_selects_nearer_player_from_both_robots() {
+        for own_player in [PlayerNumber::Two, PlayerNumber::Three] {
+            let mut blackboard = blackboard();
+            let near = point!(0.0, 1.0);
+            let far = point!(0.0, -2.0);
+            blackboard.world_state.robot.player_number = own_player;
+            blackboard.world_state.robot.ground_to_field =
+                Some(Isometry2::from(if own_player == PlayerNumber::Two {
+                    near
+                } else {
+                    far
+                }));
+            for (player, position) in [(PlayerNumber::Two, near), (PlayerNumber::Three, far)] {
+                blackboard.world_state.player_states[player] = Some(PlayerState {
+                    pose: Pose2::from(position),
+                    ball_position: None,
+                });
+            }
+            blackboard.ball = Some(ball_at(point!(0.0, 0.0)));
+            blackboard.world_state.rule_obstacles =
+                vec![RuleObstacle::Circle(Circle::new(point!(0.0, 0.0), 0.75))];
+            calculate_voronoi_grid(&mut blackboard);
+
+            assert_eq!(
+                is_closest_to_ball(&mut blackboard),
+                own_player == PlayerNumber::Two
+            );
+        }
+    }
+
+    #[test]
+    fn blocked_ball_breaks_distance_ties_by_player_number() {
+        let mut blackboard = blackboard();
+        blackboard.world_state.robot.player_number = PlayerNumber::Three;
+        blackboard.world_state.robot.ground_to_field = Some(Isometry2::from(point!(0.0, -1.0)));
+        blackboard.world_state.player_states[PlayerNumber::Two] = Some(PlayerState {
+            pose: Pose2::from(point!(0.0, 1.0)),
+            ball_position: None,
+        });
+        blackboard.ball = Some(ball_at(point!(0.0, 0.0)));
+        blackboard.world_state.rule_obstacles =
+            vec![RuleObstacle::Circle(Circle::new(point!(0.0, 0.0), 0.75))];
+        calculate_voronoi_grid(&mut blackboard);
+
+        assert!(!is_closest_to_ball(&mut blackboard));
+    }
 }

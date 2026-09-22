@@ -1,8 +1,9 @@
 use coordinate_systems::Field;
 use hsl_network_messages::PlayerNumber;
 use linear_algebra::{Pose2, point};
+use ordered_float::NotNan;
 use types::behavior_tree::Status;
-use voronoi::VoronoiGrid;
+use voronoi::{Ownership, VoronoiGrid};
 
 use crate::node::Blackboard;
 
@@ -32,6 +33,30 @@ pub fn calculate_voronoi_grid(blackboard: &mut Blackboard) -> Status {
         Status::Success
     } else {
         Status::Failure
+    }
+}
+
+pub(crate) fn closest_player_to_ball(blackboard: &Blackboard) -> Option<PlayerNumber> {
+    let ball = blackboard.ball.as_ref()?;
+    let map = blackboard.voronoi_map.as_ref()?;
+    match map.ownership_at(ball.position)? {
+        Ownership::Robot(player) => Some(player),
+        Ownership::Blocked => {
+            let robot_pose = blackboard.world_state.robot.ground_to_field?.as_pose();
+            // A blocked ball has no path-distance label. Compare the actual sites rather
+            // than choosing the owner of an arbitrarily selected obstacle boundary cell.
+            collect_sites(blackboard, robot_pose)
+                .into_iter()
+                .filter_map(|(pose, player)| {
+                    let distance =
+                        NotNan::new((pose.position() - ball.position).norm_squared()).ok()?;
+                    (distance.is_finite() && map.ownership_at(pose.position()).is_some())
+                        .then_some((distance, player))
+                })
+                .min()
+                .map(|(_, player)| player)
+        }
+        Ownership::Free => None,
     }
 }
 
