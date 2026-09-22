@@ -14,11 +14,6 @@ type Queue = BinaryHeap<QueueItem>;
 const STRAIGHT_COST: f32 = 1.0;
 const DIAGONAL_COST: f32 = SQRT_2;
 
-struct NearestCell {
-    pub index: usize,
-    pub cost: f32,
-}
-
 #[derive(Copy, Clone, Debug)]
 struct Neighbor {
     pub dx: isize,
@@ -211,23 +206,41 @@ impl VoronoiGrid {
         distance: &mut [f32],
         queue: &mut Queue,
     ) {
-        let mut seed_distance = vec![f32::INFINITY; self.tiles.len()];
+        let mut seed_distance = Vec::new();
         let mut seed_queue = BinaryHeap::new();
 
         for (robot_pose, player_number) in robots {
-            if let Some(seed_cell) = self.nearest_matching_cell(
-                robot_pose.position(),
-                |ownership| ownership != Ownership::Blocked,
-                &mut seed_distance,
-                &mut seed_queue,
-            ) {
-                self.relax(
-                    seed_cell.index,
-                    seed_cell.cost,
-                    *player_number,
-                    distance,
-                    queue,
-                );
+            let Some(start_index) = self.point_to_index(robot_pose.position()) else {
+                continue;
+            };
+            if self.tiles[start_index] != Ownership::Blocked {
+                self.relax(start_index, 0.0, *player_number, distance, queue);
+                continue;
+            }
+
+            seed_distance.clear();
+            seed_distance.resize(self.tiles.len(), f32::INFINITY);
+            seed_distance[start_index] = 0.0;
+            seed_queue.push(Reverse((NotNan::new(0.0).unwrap(), start_index)));
+
+            // A source inside an obstacle may escape through any boundary cell.
+            // Stop each escape path at free space so it cannot tunnel into another obstacle.
+            while let Some(Reverse((cost, index))) = seed_queue.pop() {
+                let cost = cost.into_inner();
+                if cost > seed_distance[index] {
+                    continue;
+                }
+                if self.tiles[index] != Ownership::Blocked {
+                    self.relax(index, cost, *player_number, distance, queue);
+                    continue;
+                }
+                for (neighbor_index, neighbor) in self.neighbor_indices(index) {
+                    let new_cost = cost + neighbor.step_cost;
+                    if new_cost < seed_distance[neighbor_index] {
+                        seed_distance[neighbor_index] = new_cost;
+                        seed_queue.push(Reverse((NotNan::new(new_cost).unwrap(), neighbor_index)));
+                    }
+                }
             }
         }
     }
@@ -242,7 +255,7 @@ impl VoronoiGrid {
             &mut distance,
             &mut queue,
         )
-        .map(|nearest_cell| self.tiles[nearest_cell.index])
+        .map(|index| self.tiles[index])
     }
 
     fn nearest_matching_cell(
@@ -251,13 +264,10 @@ impl VoronoiGrid {
         matches_ownership: impl Fn(Ownership) -> bool,
         distance: &mut [f32],
         queue: &mut BinaryHeap<Reverse<(NotNan<f32>, usize)>>,
-    ) -> Option<NearestCell> {
+    ) -> Option<usize> {
         let start_index = self.point_to_index(point)?;
         if matches_ownership(self.tiles[start_index]) {
-            return Some(NearestCell {
-                index: start_index,
-                cost: 0.0,
-            });
+            return Some(start_index);
         }
 
         let mut touched = Vec::new();
@@ -276,10 +286,7 @@ impl VoronoiGrid {
                 for index in touched {
                     distance[index] = f32::INFINITY;
                 }
-                return Some(NearestCell {
-                    index: current_index,
-                    cost: current_cost,
-                });
+                return Some(current_index);
             }
             for (neighbor_index, neighbor) in self.neighbor_indices(current_index) {
                 let new_cost = current_cost + neighbor.step_cost;
@@ -483,5 +490,47 @@ mod tests {
             grid.ownership_at(point!(-1.0, 0.0)),
             Some(Ownership::Robot(PlayerNumber::Three))
         );
+    }
+
+    #[test]
+    fn blocked_source_can_approach_in_every_direction() {
+        for (x, y) in [(0.0, 1.0), (1.0, 0.0), (0.0, -1.0), (-1.0, 0.0)] {
+            let mut grid = VoronoiGrid::new(point!(-6.0, -6.0), point!(6.0, 6.0), 1.0);
+            grid.initialize_obstacles(
+                &[Obstacle::ball(point!(0.0, 0.0), 1.01)],
+                &[],
+                Isometry2::identity(),
+            );
+            grid.multi_source_dijkstra(&[
+                (Pose2::from(point!(0.0, 0.0)), PlayerNumber::Two),
+                (Pose2::from(point!(5.0 * x, 5.0 * y)), PlayerNumber::Three),
+            ]);
+
+            assert_eq!(
+                grid.ownership_at(point!(2.0 * x, 2.0 * y)),
+                Some(Ownership::Robot(PlayerNumber::Two)),
+                "source lost ownership in direction ({x}, {y})"
+            );
+            assert_eq!(
+                grid.ownership_at(point!(0.0, 0.0)),
+                Some(Ownership::Blocked)
+            );
+        }
+    }
+
+    #[test]
+    fn blocked_source_seeds_both_sides_without_crossing_other_obstacles() {
+        let mut grid = VoronoiGrid::new(point!(-3.0, -3.0), point!(3.0, 3.0), 1.0);
+        grid.rasterize_bounds(0.0, 0.0, -3.0, 3.0, |point| point.x() == 0.0);
+        grid.rasterize_bounds(2.0, 2.0, -3.0, 3.0, |point| point.x() == 2.0);
+        grid.multi_source_dijkstra(&[(Pose2::from(point!(0.0, 0.0)), PlayerNumber::Two)]);
+
+        for x in [-1.0, 1.0] {
+            assert_eq!(
+                grid.ownership_at(point!(x, 0.0)),
+                Some(Ownership::Robot(PlayerNumber::Two))
+            );
+        }
+        assert_eq!(grid.ownership_at(point!(3.0, 0.0)), Some(Ownership::Free));
     }
 }
