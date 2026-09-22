@@ -25,11 +25,21 @@ use crate::{
     switch_motion_type::{is_last_motion_type, switch_motion_type},
 };
 
+/// Returns a stationary path when the target cannot be reached.
 pub fn plan(
     blackboard: &mut Blackboard,
     target_in_ground: Point2<Ground>,
     ground_to_field: Isometry2<Ground, Field>,
 ) -> Path {
+    try_plan(blackboard, target_in_ground, ground_to_field)
+        .unwrap_or_else(|| direct_path(Point::origin(), Point::origin()))
+}
+
+fn try_plan(
+    blackboard: &mut Blackboard,
+    target_in_ground: Point2<Ground>,
+    ground_to_field: Isometry2<Ground, Field>,
+) -> Option<Path> {
     let mut planner = create_path_planner(blackboard, ground_to_field);
     let field_dimensions = blackboard.field_dimensions;
     let target_in_field = ground_to_field * target_in_ground;
@@ -41,11 +51,15 @@ pub fn plan(
             target_in_field.y().clamp(-y_max, y_max)
         ];
 
-    let path = planner
-        .plan(Point::origin(), clamped_target_in_robot)
-        .unwrap();
+    let path = planner.plan(Point::origin(), clamped_target_in_robot);
     blackboard.path_obstacles_output = planner.obstacles;
-    path.unwrap_or_else(|| direct_path(Point::origin(), target_in_ground))
+    match path {
+        Ok(path) => path,
+        Err(error) => {
+            tracing::warn!(?error, "Failed to plan walking path");
+            None
+        }
+    }
 }
 
 fn create_path_planner(
@@ -129,7 +143,10 @@ pub fn walk_to(
             blackboard.body_motion = Some(BodyMotion::Stand);
             Status::Success
         } else {
-            let path = plan(blackboard, target_pose.position(), ground_to_field);
+            let Some(path) = try_plan(blackboard, target_pose.position(), ground_to_field) else {
+                blackboard.body_motion = Some(BodyMotion::Stand);
+                return Status::Failure;
+            };
             blackboard.body_motion = Some(BodyMotion::Walk {
                 path,
                 orientation_mode,
@@ -483,5 +500,66 @@ mod tests {
         calculate_voronoi_grid(&mut blackboard);
 
         assert!(support_target(&blackboard).is_none());
+    }
+
+    fn enclosed_robot() -> Blackboard {
+        let mut blackboard = blackboard();
+        blackboard.parameters.walking.path_planning.robot_radius = 0.4;
+        blackboard.world_state.obstacles = [
+            point!(0.5, 0.5),
+            point!(-0.5, 0.5),
+            point!(-0.5, -0.5),
+            point!(0.5, -0.5),
+        ]
+        .map(|position| Obstacle::goal_post(position, 0.2))
+        .to_vec();
+        blackboard
+    }
+
+    #[test]
+    fn walking_stands_and_fails_when_no_route_exists() {
+        let mut blackboard = enclosed_robot();
+        let status = walk_to(
+            &mut blackboard,
+            Pose2::from(point!(2.0, 0.0)),
+            1.0,
+            OrientationMode::AlignWithPath,
+            0.05,
+            nalgebra::Vector2::zeros(),
+        );
+
+        assert_eq!(status, Status::Failure);
+        assert!(matches!(blackboard.body_motion, Some(BodyMotion::Stand)));
+        assert!(!blackboard.path_obstacles_output.is_empty());
+    }
+
+    #[test]
+    fn public_plan_does_not_fabricate_a_route_through_obstacles() {
+        let mut blackboard = enclosed_robot();
+        let path = plan(&mut blackboard, point!(2.0, 0.0), Isometry2::identity());
+
+        assert_eq!(path.first_segment().start_point(), Point2::origin());
+        assert_eq!(path.last_segment().end_point(), Point2::origin());
+        assert!(path.segments.iter().all(|segment| segment.length() == 0.0));
+    }
+
+    #[test]
+    fn walking_still_follows_a_reachable_path() {
+        let mut blackboard = blackboard();
+        let target = point!(2.0, 0.0);
+        let status = walk_to(
+            &mut blackboard,
+            Pose2::from(target),
+            1.0,
+            OrientationMode::AlignWithPath,
+            0.05,
+            nalgebra::Vector2::zeros(),
+        );
+
+        assert_eq!(status, Status::Success);
+        let Some(BodyMotion::Walk { path, .. }) = &blackboard.body_motion else {
+            panic!("reachable target should produce walking motion");
+        };
+        assert_eq!(path.last_segment().end_point(), target);
     }
 }
