@@ -1,5 +1,5 @@
 use coordinate_systems::Field;
-use hsl_network_messages::SubState;
+use hsl_network_messages::{SubState, Team};
 use linear_algebra::{Orientation2, Pose2, Vector2, point};
 use types::{
     behavior_tree::Status,
@@ -58,7 +58,7 @@ pub fn goalkeeper_subtree() -> Node<Blackboard> {
                 )
             ),
             sequence!(
-                condition!(is_ball_close_enough_to_goal_to_become_striker),
+                condition!(is_goalkeeper_striker_eligible),
                 selection!(sequence!(
                     action!(calculate_voronoi_grid),
                     condition!(is_closest_to_ball),
@@ -101,8 +101,7 @@ fn goalkeeper_sub_state_subtree() -> Node<Blackboard> {
             subtree!(goalkeeper_active_defense_position_subtree)
         ),
         sequence!(
-            condition!(hulks_is_kicking_team),
-            condition!(is_sub_state, SubState::GoalKick),
+            condition!(is_goalkeeper_striker_eligible),
             action!(calculate_voronoi_grid),
             condition!(is_closest_to_ball),
             subtree!(striker_subtree),
@@ -222,7 +221,17 @@ fn is_ball_in_own_penalty_area(blackboard: &mut Blackboard) -> bool {
     })
 }
 
-fn is_ball_close_enough_to_goal_to_become_striker(blackboard: &mut Blackboard) -> bool {
+fn is_goalkeeper_striker_eligible(blackboard: &mut Blackboard) -> bool {
+    goalkeeper_can_pursue_ball(blackboard)
+}
+
+pub(crate) fn goalkeeper_can_pursue_ball(blackboard: &Blackboard) -> bool {
+    if let Some(state) = &blackboard.world_state.filtered_game_controller_state
+        && let (Some(sub_state), Some(kicking_team)) = (state.sub_state, state.kicking_team)
+    {
+        return sub_state == SubState::GoalKick && kicking_team == Team::Hulks;
+    }
+
     blackboard.ball.as_ref().is_some_and(|ball| {
         let own_goal_x = -blackboard.field_dimensions.length / 2.0;
         let maximum_ball_x = own_goal_x + blackboard.parameters.goalkeeper.striker_distance;
