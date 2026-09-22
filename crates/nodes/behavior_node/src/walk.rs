@@ -1,15 +1,15 @@
 use coordinate_systems::{Field, Ground};
 use filtering::hysteresis::less_than_with_relative_hysteresis;
+use geometry::Distance;
 use hsl_network_messages::PlayerNumber;
 use linear_algebra::{Isometry2, Orientation2, Point, Point2, Pose2, point};
 use path_planner::path_planner::PathPlanner;
 use types::{
     behavior_tree::Status,
-    field_dimensions::FieldDimensions,
     motion_command::{BodyMotion, MotionCommand, OrientationMode},
     motion_type::MotionType,
-    parameters::VoronoiParameters,
     path::{Path, direct_path},
+    path_obstacles::PathObstacleShape,
 };
 use voronoi::{Ownership, VoronoiGrid};
 
@@ -30,6 +30,28 @@ pub fn plan(
     target_in_ground: Point2<Ground>,
     ground_to_field: Isometry2<Ground, Field>,
 ) -> Path {
+    let mut planner = create_path_planner(blackboard, ground_to_field);
+    let field_dimensions = blackboard.field_dimensions;
+    let target_in_field = ground_to_field * target_in_ground;
+    let x_max = field_dimensions.length / 2.0 + field_dimensions.border_strip_width;
+    let y_max = field_dimensions.width / 2.0 + field_dimensions.border_strip_width;
+    let clamped_target_in_robot = ground_to_field.inverse()
+        * point![
+            target_in_field.x().clamp(-x_max, x_max),
+            target_in_field.y().clamp(-y_max, y_max)
+        ];
+
+    let path = planner
+        .plan(Point::origin(), clamped_target_in_robot)
+        .unwrap();
+    blackboard.path_obstacles_output = planner.obstacles;
+    path.unwrap_or_else(|| direct_path(Point::origin(), target_in_ground))
+}
+
+fn create_path_planner(
+    blackboard: &Blackboard,
+    ground_to_field: Isometry2<Ground, Field>,
+) -> PathPlanner {
     let parameters: &types::parameters::PathPlanningParameters =
         &blackboard.parameters.walking.path_planning;
     let field_dimensions = blackboard.field_dimensions;
@@ -66,20 +88,7 @@ pub fn plan(
         );
     }
 
-    let target_in_field = ground_to_field * target_in_ground;
-    let x_max = field_dimensions.length / 2.0 + field_dimensions.border_strip_width;
-    let y_max = field_dimensions.width / 2.0 + field_dimensions.border_strip_width;
-    let clamped_target_in_robot = ground_to_field.inverse()
-        * point![
-            target_in_field.x().clamp(-x_max, x_max),
-            target_in_field.y().clamp(-y_max, y_max)
-        ];
-
-    let path = planner
-        .plan(Point::origin(), clamped_target_in_robot)
-        .unwrap();
-    blackboard.path_obstacles_output = planner.obstacles;
-    path.unwrap_or_else(|| direct_path(Point::origin(), target_in_ground))
+    planner
 }
 
 pub fn walk_to(
@@ -253,13 +262,8 @@ pub fn walk_to_voronoi_position(blackboard: &mut Blackboard) -> Status {
     if let (Some(ground_to_field), Some(map)) = (
         blackboard.world_state.robot.ground_to_field,
         &blackboard.voronoi_map,
-    ) && let Some(target_position) = target_player_position(
-        map,
-        blackboard.world_state.robot.player_number,
-        blackboard.ball.as_ref().map(|ball| ball.position),
-        &blackboard.field_dimensions,
-        &blackboard.parameters.voronoi,
-    ) {
+    ) && let Some(target_position) = target_player_position(map, blackboard, ground_to_field)
+    {
         let walk_and_stand = blackboard.parameters.walking.walk_and_stand;
         let kicking_speed = blackboard.parameters.walking.speed.kicking;
         let orientation_mode = if let Some(ball) = &blackboard.ball {
@@ -286,11 +290,15 @@ pub fn walk_to_voronoi_position(blackboard: &mut Blackboard) -> Status {
 
 fn target_player_position(
     map: &VoronoiGrid,
-    player: PlayerNumber,
-    ball_position: Option<Point2<Field>>,
-    field_dimensions: &FieldDimensions,
-    parameters: &VoronoiParameters,
+    blackboard: &Blackboard,
+    ground_to_field: Isometry2<Ground, Field>,
 ) -> Option<Point2<Field>> {
+    let player = blackboard.world_state.robot.player_number;
+    let ball_position = blackboard.ball.as_ref().map(|ball| ball.position);
+    let field_dimensions = &blackboard.field_dimensions;
+    let parameters = &blackboard.parameters.voronoi;
+    let planner = create_path_planner(blackboard, ground_to_field);
+    let field_to_ground = ground_to_field.inverse();
     let mut sum_x = 0.0;
     let mut sum_y = 0.0;
     let mut count = 0;
@@ -300,6 +308,22 @@ fn target_player_position(
         if ownership != Ownership::Robot(player)
             || point.x().abs() > field_dimensions.length / 2.0
             || point.y().abs() > field_dimensions.width / 2.0
+        {
+            continue;
+        }
+
+        // Also account for the ball and goal structures, which are walking obstacles
+        // but must not remove ball ownership from the coverage grid.
+        let point_in_ground = field_to_ground * point;
+        if planner
+            .obstacles
+            .iter()
+            .any(|obstacle| match obstacle.shape {
+                PathObstacleShape::Circle(circle) => circle.contains(point_in_ground),
+                PathObstacleShape::LineSegment(line) => {
+                    line.distance_to(point_in_ground) <= f32::EPSILON
+                }
+            })
         {
             continue;
         }
@@ -319,7 +343,12 @@ fn target_player_position(
     let centroid: Point2<Field> = point![sum_x * inv_count, sum_y * inv_count];
 
     let Some(ball_position) = ball_position else {
-        return Some(centroid);
+        // A centroid of a non-convex region need not be a feasible point in that region.
+        return candidates.into_iter().min_by(|a, b| {
+            (*a - centroid)
+                .norm_squared()
+                .total_cmp(&(*b - centroid).norm_squared())
+        });
     };
 
     let half_length = field_dimensions.length / 2.0 + parameters.padding;
@@ -361,4 +390,98 @@ fn target_player_position(
     }
 
     best_target.map(|(_, point)| point)
+}
+
+#[cfg(test)]
+mod tests {
+    use types::{
+        obstacles::Obstacle,
+        path::traits::EndPoints,
+        world_state::{BallState, PlayerState},
+    };
+
+    use crate::{
+        test_utils::{ball_at, blackboard},
+        voronoi::calculate_voronoi_grid,
+    };
+
+    use super::*;
+
+    fn support_target(blackboard: &Blackboard) -> Option<Point2<Field>> {
+        target_player_position(
+            blackboard.voronoi_map.as_ref().unwrap(),
+            blackboard,
+            blackboard.world_state.robot.ground_to_field.unwrap(),
+        )
+    }
+
+    #[test]
+    fn support_target_respects_walking_clearance() {
+        let mut blackboard = blackboard();
+        blackboard.world_state.robot.ground_to_field = Some(Isometry2::from(point!(-2.8, 0.0)));
+        blackboard.parameters.walking.path_planning.robot_radius = 0.4;
+        blackboard.world_state.obstacles = vec![Obstacle::ball(point!(0.65, 0.11), 0.2)];
+        blackboard.world_state.player_states[PlayerNumber::Three] = Some(PlayerState {
+            pose: Pose2::from(point!(2.0, 0.0)),
+            ball_position: None,
+        });
+        blackboard.ball = Some(ball_at(point!(2.4, 0.0)));
+        calculate_voronoi_grid(&mut blackboard);
+
+        let target = support_target(&blackboard).unwrap();
+        assert!((target - point!(-2.15, 0.11)).norm() > 0.6, "{target:?}");
+        assert_eq!(
+            blackboard
+                .voronoi_map
+                .as_ref()
+                .unwrap()
+                .ownership_at(target),
+            Some(Ownership::Robot(PlayerNumber::Two))
+        );
+
+        let ground_to_field = blackboard.world_state.robot.ground_to_field.unwrap();
+        assert_eq!(walk_to_voronoi_position(&mut blackboard), Status::Success);
+        let Some(BodyMotion::Walk { path, .. }) = &blackboard.body_motion else {
+            panic!("supporter should walk to its clear target");
+        };
+        let endpoint = ground_to_field * path.last_segment().end_point();
+        assert!(
+            (endpoint - target).norm() < 1e-5,
+            "planner moved {target:?} to {endpoint:?}"
+        );
+    }
+
+    #[test]
+    fn support_target_avoids_ball_clearance_even_without_cached_ball() {
+        let mut blackboard = blackboard();
+        blackboard.parameters.walking.path_planning.robot_radius = 0.4;
+        blackboard
+            .parameters
+            .walking
+            .path_planning
+            .ball_obstacle_radius = 0.05;
+        blackboard.world_state.ball = Some(BallState::default());
+        calculate_voronoi_grid(&mut blackboard);
+
+        let target = support_target(&blackboard).unwrap();
+        assert!(target.coords().norm() > 0.45, "{target:?}");
+        assert_eq!(
+            blackboard
+                .voronoi_map
+                .as_ref()
+                .unwrap()
+                .ownership_at(target),
+            Some(Ownership::Robot(PlayerNumber::Two))
+        );
+    }
+
+    #[test]
+    fn no_support_target_when_walking_clearance_covers_the_field() {
+        let mut blackboard = blackboard();
+        blackboard.parameters.walking.path_planning.robot_radius = 10.0;
+        blackboard.world_state.ball = Some(BallState::default());
+        calculate_voronoi_grid(&mut blackboard);
+
+        assert!(support_target(&blackboard).is_none());
+    }
 }

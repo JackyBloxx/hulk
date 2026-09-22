@@ -1,8 +1,8 @@
 use coordinate_systems::{Field, Ground};
 use hsl_network_messages::PlayerNumber;
-use linear_algebra::{Isometry2, Pose2, point};
+use linear_algebra::{Isometry2, Pose2, point, vector};
 use ordered_float::NotNan;
-use types::behavior_tree::Status;
+use types::{behavior_tree::Status, obstacles::Obstacle, rule_obstacles::RuleObstacle};
 use voronoi::{Ownership, VoronoiGrid};
 
 use crate::{goalkeeper::goalkeeper_can_pursue_ball, node::Blackboard};
@@ -35,11 +35,36 @@ fn build_grid(
         point!(length_half + padding, width_half + padding),
         parameters.grid_resolution,
     );
-    map.initialize_obstacles(
-        &blackboard.world_state.obstacles,
-        &blackboard.world_state.rule_obstacles,
-        ground_to_field,
-    );
+    // Ownership distances describe the robot center, so reserve its walking footprint.
+    let robot_radius = blackboard.parameters.walking.path_planning.robot_radius;
+    let obstacles: Vec<_> = blackboard
+        .world_state
+        .obstacles
+        .iter()
+        .map(|obstacle| Obstacle {
+            radius_at_hip_height: obstacle.radius_at_hip_height + robot_radius,
+            radius_at_foot_height: obstacle.radius_at_foot_height + robot_radius,
+            ..*obstacle
+        })
+        .collect();
+    let rule_obstacles: Vec<_> = blackboard
+        .world_state
+        .rule_obstacles
+        .iter()
+        .copied()
+        .map(|mut obstacle| {
+            match &mut obstacle {
+                RuleObstacle::Circle(circle) => circle.radius += robot_radius,
+                RuleObstacle::Rectangle(rectangle) => {
+                    let margin = vector!(robot_radius, robot_radius);
+                    rectangle.min -= margin;
+                    rectangle.max += margin;
+                }
+            }
+            obstacle
+        })
+        .collect();
+    map.initialize_obstacles(&obstacles, &rule_obstacles, ground_to_field);
     map.multi_source_dijkstra(sites);
     map
 }
@@ -210,5 +235,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn grid_reserves_robot_clearance_around_physical_and_rule_obstacles() {
+        use geometry::rectangle::Rectangle;
+        use types::obstacles::Obstacle;
+
+        let mut blackboard = blackboard();
+        blackboard.parameters.walking.path_planning.robot_radius = 0.4;
+        blackboard.world_state.obstacles = vec![Obstacle::ball(point!(0.0, 0.0), 0.2)];
+        blackboard.world_state.rule_obstacles = vec![
+            RuleObstacle::Circle(Circle::new(point!(2.0, 0.0), 0.3)),
+            RuleObstacle::Rectangle(Rectangle {
+                min: point!(-3.0, -0.5),
+                max: point!(-2.0, 0.5),
+            }),
+        ];
+        calculate_voronoi_grid(&mut blackboard);
+        let grid = blackboard.voronoi_map.as_ref().unwrap();
+
+        for point in [point!(0.4, 0.0), point!(2.6, 0.0), point!(-1.8, 0.0)] {
+            assert_eq!(
+                grid.ownership_at(point),
+                Some(Ownership::Blocked),
+                "{point:?}"
+            );
+        }
+        assert_eq!(
+            grid.ownership_at(point!(0.0, 1.0)),
+            Some(Ownership::Robot(PlayerNumber::Two))
+        );
     }
 }

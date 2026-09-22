@@ -154,6 +154,16 @@ impl VoronoiGrid {
                 if self.tiles[neighbor_index] == Ownership::Blocked {
                     continue;
                 }
+                if neighbor.dx != 0 && neighbor.dy != 0 {
+                    let (x, y) = xy_from_index(self.geometry.width, current_index);
+                    let (nx, ny) = xy_from_index(self.geometry.width, neighbor_index);
+                    if self.tiles[index_from_xy(self.geometry.width, nx, y)] == Ownership::Blocked
+                        || self.tiles[index_from_xy(self.geometry.width, x, ny)]
+                            == Ownership::Blocked
+                    {
+                        continue;
+                    }
+                }
 
                 let new_cost = current_cost + neighbor.step_cost;
 
@@ -532,5 +542,27 @@ mod tests {
             );
         }
         assert_eq!(grid.ownership_at(point!(3.0, 0.0)), Some(Ownership::Free));
+    }
+
+    #[test]
+    fn propagation_cannot_cut_between_blocked_neighbors() {
+        let mut grid = VoronoiGrid::new(point!(-1.0, -1.0), point!(1.0, 1.0), 0.2);
+        grid.initialize_obstacles(
+            &[
+                Obstacle::ball(point!(0.25, 0.0), 0.2),
+                Obstacle::ball(point!(0.0, 0.25), 0.2),
+            ],
+            &[],
+            Isometry2::identity(),
+        );
+        grid.multi_source_dijkstra(&[
+            (Pose2::from(point!(0.0, 0.0)), PlayerNumber::Two),
+            (Pose2::from(point!(0.6, 0.2)), PlayerNumber::Three),
+        ]);
+
+        assert_eq!(
+            grid.ownership_at(point!(0.2, 0.2)),
+            Some(Ownership::Robot(PlayerNumber::Three))
+        );
     }
 }
