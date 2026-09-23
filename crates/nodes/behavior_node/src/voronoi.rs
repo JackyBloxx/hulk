@@ -5,9 +5,15 @@ use ordered_float::NotNan;
 use types::{behavior_tree::Status, obstacles::Obstacle, rule_obstacles::RuleObstacle};
 use voronoi::{Ownership, VoronoiGrid};
 
-use crate::{goalkeeper::goalkeeper_can_pursue_ball, node::Blackboard};
+use crate::node::Blackboard;
 
 pub fn calculate_voronoi_grid(blackboard: &mut Blackboard) -> Status {
+    // Both behavior runtimes clear the map before each tree tick. Reuse it if
+    // another branch requests the same tick's map.
+    if blackboard.voronoi_map.is_some() {
+        return Status::Success;
+    }
+
     if let Some(ground_to_field) = blackboard.world_state.robot.ground_to_field {
         let sites = collect_sites(blackboard, ground_to_field.as_pose());
         for (pose, _) in &sites {
@@ -73,26 +79,12 @@ pub(crate) fn closest_player_to_ball(blackboard: &Blackboard) -> Option<PlayerNu
     let ball = blackboard.ball.as_ref()?;
     let map = blackboard.voronoi_map.as_ref()?;
     match map.ownership_at(ball.position)? {
-        Ownership::Robot(player)
-            if player == blackboard.parameters.goalkeeper.player_number
-                && !goalkeeper_can_pursue_ball(blackboard) =>
-        {
-            // Keep the goalkeeper in the coverage map, but re-elect among players
-            // that can actually pursue this ball using the same obstacle distances.
-            let ground_to_field = blackboard.world_state.robot.ground_to_field?;
-            let sites = collect_eligible_sites(blackboard, ground_to_field.as_pose());
-            let election_map = build_grid(blackboard, ground_to_field, &sites);
-            match election_map.ownership_at(ball.position)? {
-                Ownership::Robot(player) => Some(player),
-                _ => None,
-            }
-        }
         Ownership::Robot(player) => Some(player),
         Ownership::Blocked => {
             let robot_pose = blackboard.world_state.robot.ground_to_field?.as_pose();
             // A blocked ball has no path-distance label. Compare the actual sites rather
             // than choosing the owner of an arbitrarily selected obstacle boundary cell.
-            collect_eligible_sites(blackboard, robot_pose)
+            collect_sites(blackboard, robot_pose)
                 .into_iter()
                 .filter_map(|(pose, player)| {
                     let distance =
@@ -105,17 +97,6 @@ pub(crate) fn closest_player_to_ball(blackboard: &Blackboard) -> Option<PlayerNu
         }
         Ownership::Free => None,
     }
-}
-
-fn collect_eligible_sites(
-    blackboard: &Blackboard,
-    robot_pose: Pose2<Field>,
-) -> Vec<(Pose2<Field>, PlayerNumber)> {
-    let mut sites = collect_sites(blackboard, robot_pose);
-    if !goalkeeper_can_pursue_ball(blackboard) {
-        sites.retain(|(_, player)| *player != blackboard.parameters.goalkeeper.player_number);
-    }
-    sites
 }
 
 fn collect_sites(
@@ -139,102 +120,101 @@ fn collect_sites(
 #[cfg(test)]
 mod tests {
     use geometry::circle::Circle;
-    use hsl_network_messages::{SubState, Team};
     use linear_algebra::Isometry2;
-    use types::{
-        filtered_game_controller_state::FilteredGameControllerState, rule_obstacles::RuleObstacle,
-        world_state::PlayerState,
-    };
+    use types::{rule_obstacles::RuleObstacle, world_state::PlayerState};
 
     use crate::test_utils::{ball_at, blackboard};
 
     use super::*;
 
     #[test]
-    fn ineligible_goalkeeper_keeps_coverage_but_not_ball_ownership() {
+    fn ball_ownership_depends_on_sites_not_goalkeeper_role() {
         for own_player in [PlayerNumber::One, PlayerNumber::Two] {
-            let mut blackboard = blackboard();
-            blackboard.world_state.robot.player_number = own_player;
-            for (player, position) in [
-                (PlayerNumber::One, point!(-4.2, 0.0)),
-                (PlayerNumber::Two, point!(4.0, 0.0)),
-            ] {
-                blackboard.world_state.player_states[player] = Some(PlayerState {
-                    pose: Pose2::from(position),
-                    ball_position: None,
-                });
-                if player == own_player {
-                    blackboard.world_state.robot.ground_to_field = Some(Isometry2::from(position));
+            for goalkeeper in [PlayerNumber::One, PlayerNumber::Two] {
+                for blocked in [false, true] {
+                    let mut blackboard = blackboard();
+                    blackboard.parameters.goalkeeper.player_number = goalkeeper;
+                    blackboard.world_state.robot.player_number = own_player;
+                    for (player, position) in [
+                        (PlayerNumber::One, point!(-4.2, 0.0)),
+                        (PlayerNumber::Two, point!(4.0, 0.0)),
+                    ] {
+                        blackboard.world_state.player_states[player] = Some(PlayerState {
+                            pose: Pose2::from(position),
+                            ball_position: None,
+                        });
+                        if player == own_player {
+                            blackboard.world_state.robot.ground_to_field =
+                                Some(Isometry2::from(position));
+                        }
+                    }
+                    blackboard.ball = Some(ball_at(point!(-0.8, 0.0)));
+                    if blocked {
+                        blackboard.world_state.rule_obstacles =
+                            vec![RuleObstacle::Circle(Circle::new(point!(-0.8, 0.0), 0.75))];
+                    }
+                    assert_eq!(calculate_voronoi_grid(&mut blackboard), Status::Success);
+
+                    assert_eq!(
+                        closest_player_to_ball(&blackboard),
+                        Some(PlayerNumber::One),
+                        "own_player={own_player:?}, goalkeeper={goalkeeper:?}, blocked={blocked}"
+                    );
                 }
             }
-            blackboard.ball = Some(ball_at(point!(-0.8, 0.0)));
-            calculate_voronoi_grid(&mut blackboard);
-
-            assert_eq!(
-                blackboard
-                    .voronoi_map
-                    .as_ref()
-                    .unwrap()
-                    .ownership_at(point!(-0.8, 0.0)),
-                Some(Ownership::Robot(PlayerNumber::One))
-            );
-            assert_eq!(closest_player_to_ball(&blackboard), Some(PlayerNumber::Two));
         }
     }
 
     #[test]
-    fn goalkeeper_election_respects_normal_and_set_play_eligibility() {
-        let cases = [
-            (-0.8, None, None, PlayerNumber::Two),
-            (-2.0, None, None, PlayerNumber::One),
-            (
-                -0.8,
-                Some(SubState::GoalKick),
-                Some(Team::Hulks),
-                PlayerNumber::One,
-            ),
-            (
-                -2.0,
-                Some(SubState::GoalKick),
-                Some(Team::Opponent),
-                PlayerNumber::Two,
-            ),
-            (
-                -2.0,
-                Some(SubState::CornerKick),
-                Some(Team::Hulks),
-                PlayerNumber::Two,
-            ),
-        ];
-        for (ball_x, sub_state, kicking_team, expected) in cases {
-            for blocked in [false, true] {
-                let mut blackboard = blackboard();
-                blackboard.world_state.robot.ground_to_field =
-                    Some(Isometry2::from(point!(4.0, 0.0)));
-                blackboard.world_state.player_states[PlayerNumber::One] = Some(PlayerState {
-                    pose: Pose2::from(point!(-4.2, 0.0)),
-                    ball_position: None,
-                });
-                blackboard.ball = Some(ball_at(point!(ball_x, 0.0)));
-                blackboard.world_state.filtered_game_controller_state =
-                    Some(FilteredGameControllerState {
-                        sub_state,
-                        kicking_team,
-                        ..Default::default()
-                    });
-                if blocked {
-                    blackboard.world_state.rule_obstacles =
-                        vec![RuleObstacle::Circle(Circle::new(point!(ball_x, 0.0), 0.75))];
-                }
-                calculate_voronoi_grid(&mut blackboard);
+    fn repeated_requests_reuse_map_until_tick_reset() {
+        let mut blackboard = blackboard();
+        assert_eq!(calculate_voronoi_grid(&mut blackboard), Status::Success);
+        let initial_map = blackboard.voronoi_map.clone();
+        let initial_inputs = blackboard.voronoi_inputs.clone();
 
-                assert_eq!(
-                    closest_player_to_ball(&blackboard),
-                    Some(expected),
-                    "ball_x={ball_x}, sub_state={sub_state:?}, team={kicking_team:?}, blocked={blocked}"
-                );
-            }
-        }
+        // Changing an input makes an unintended same-tick recomputation observable.
+        blackboard.world_state.player_states[PlayerNumber::Three] = Some(PlayerState {
+            pose: Pose2::from(point!(2.0, 0.0)),
+            ball_position: None,
+        });
+        assert_eq!(calculate_voronoi_grid(&mut blackboard), Status::Success);
+        assert!(
+            blackboard.voronoi_map == initial_map,
+            "repeated request rebuilt the cached map"
+        );
+        assert_eq!(blackboard.voronoi_inputs, initial_inputs);
+
+        // Both behavior runtimes reset these outputs before the next tree tick.
+        blackboard.voronoi_map = None;
+        blackboard.voronoi_inputs.clear();
+        assert_eq!(calculate_voronoi_grid(&mut blackboard), Status::Success);
+        assert!(
+            blackboard.voronoi_map != initial_map,
+            "tick reset did not refresh the map"
+        );
+        assert_eq!(blackboard.voronoi_inputs.len(), 2);
+        assert_eq!(
+            blackboard
+                .voronoi_map
+                .as_ref()
+                .unwrap()
+                .ownership_at(point!(2.0, 0.0)),
+            Some(Ownership::Robot(PlayerNumber::Three))
+        );
+    }
+
+    #[test]
+    fn missing_localization_does_not_populate_cache() {
+        let mut blackboard = blackboard();
+        blackboard.world_state.robot.ground_to_field = None;
+        assert_eq!(calculate_voronoi_grid(&mut blackboard), Status::Failure);
+        assert!(blackboard.voronoi_map.is_none());
+        assert!(blackboard.voronoi_inputs.is_empty());
+
+        blackboard.world_state.robot.ground_to_field = Some(Isometry2::identity());
+        assert_eq!(calculate_voronoi_grid(&mut blackboard), Status::Success);
+        assert!(blackboard.voronoi_map.is_some());
+        assert_eq!(blackboard.voronoi_inputs.len(), 1);
     }
 
     #[test]
