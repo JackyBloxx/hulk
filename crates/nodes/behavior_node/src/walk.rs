@@ -18,7 +18,6 @@ use crate::{
     actions::stand,
     behavior_tree::Node,
     condition,
-    conditions::hulks_is_kicking_team,
     kick::{kick, select_kick_target, use_last_kick_power},
     node::Blackboard,
     selection, sequence, subtree,
@@ -213,40 +212,44 @@ pub fn walk_to_block_position(blackboard: &mut Blackboard) -> Status {
 }
 
 pub fn walk_to_kickoff_pose(blackboard: &mut Blackboard) -> Status {
-    if let (Some(ground_to_field), player_number) = (
-        blackboard.world_state.robot.ground_to_field,
-        blackboard.world_state.robot.player_number,
-    ) {
-        let field_to_ground = ground_to_field.inverse();
-        let kickoff = &blackboard.parameters.kickoff;
-        let standard_pose = kickoff.standard_positions[player_number];
-        let striker_position = kickoff.striker_position;
-        let walk_and_stand = blackboard.parameters.walking.walk_and_stand;
-        let walk_to_kickoff_speed = blackboard.parameters.walking.speed.walk_to_kickoff;
+    let Some(ground_to_field) = blackboard.world_state.robot.ground_to_field else {
+        return Status::Failure;
+    };
 
-        let mut target_position = standard_pose.position;
+    let player_number = blackboard.world_state.robot.player_number;
+    let standard_pose = blackboard.parameters.kickoff.standard_positions[player_number];
 
-        if hulks_is_kicking_team(blackboard) && player_number == PlayerNumber::Three {
-            target_position = striker_position;
-        }
-
-        let kickoff_pose_in_field =
-            Pose2::from_parts(target_position, Orientation2::new(standard_pose.rotation));
-
-        let kickoff_pose_in_ground = field_to_ground * kickoff_pose_in_field;
-
-        walk_to(
-            blackboard,
-            kickoff_pose_in_ground,
-            walk_to_kickoff_speed,
-            OrientationMode::AlignWithPath,
-            walk_and_stand.normal_distance_to_be_aligned,
-            walk_and_stand.hysteresis,
-        );
-        Status::Success
+    let target_position = if player_number == blackboard.parameters.goalkeeper.player_number {
+        standard_pose.position
     } else {
-        Status::Failure
-    }
+        blackboard
+            .voronoi_map
+            .as_ref()
+            .and_then(|map| {
+                target_player_position(
+                    map,
+                    player_number,
+                    // The ball will be placed at the center spot for kickoff.
+                    Some(Point2::origin()),
+                    &blackboard.field_dimensions,
+                    &blackboard.parameters.voronoi,
+                )
+            })
+            .unwrap_or(standard_pose.position)
+    };
+
+    let target_pose_in_field =
+        Pose2::from_parts(target_position, Orientation2::new(standard_pose.rotation));
+    let walk_and_stand = blackboard.parameters.walking.walk_and_stand;
+
+    walk_to(
+        blackboard,
+        ground_to_field.inverse() * target_pose_in_field,
+        blackboard.parameters.walking.speed.walk_to_kickoff,
+        OrientationMode::AlignWithPath,
+        walk_and_stand.normal_distance_to_be_aligned,
+        walk_and_stand.hysteresis,
+    )
 }
 
 pub fn walk_to_voronoi_position(blackboard: &mut Blackboard) -> Status {

@@ -1,7 +1,7 @@
 use coordinate_systems::Field;
 use hsl_network_messages::PlayerNumber;
 use linear_algebra::{Pose2, point};
-use types::behavior_tree::Status;
+use types::{behavior_tree::Status, primary_state::PrimaryState};
 use voronoi::VoronoiGrid;
 
 use crate::node::Blackboard;
@@ -23,7 +23,10 @@ pub fn calculate_voronoi_grid(blackboard: &mut Blackboard) -> Status {
         let padding = voronoi_parameters.padding;
 
         let grid_min = point!(-length_half - padding, -width_half - padding);
-        let grid_max = point!(length_half + padding, width_half + padding);
+        let mut grid_max = point!(length_half + padding, width_half + padding);
+        if blackboard.world_state.robot.primary_state == PrimaryState::Ready {
+            grid_max = point!(0.0, width_half + padding);
+        }
 
         let mut map = VoronoiGrid::new(grid_min, grid_max, voronoi_parameters.grid_resolution);
         map.initialize_obstacles(obstacles, rule_obstacles, ground_to_field);
