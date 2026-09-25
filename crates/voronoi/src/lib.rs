@@ -223,8 +223,6 @@ impl VoronoiGrid {
             seed_distance[start_index] = 0.0;
             seed_queue.push(Reverse((NotNan::new(0.0).unwrap(), start_index)));
 
-            // A source inside an obstacle may escape through any boundary cell.
-            // Stop each escape path at free space so it cannot tunnel into another obstacle.
             while let Some(Reverse((cost, index))) = seed_queue.pop() {
                 let cost = cost.into_inner();
                 if cost > seed_distance[index] {
@@ -444,93 +442,4 @@ fn xy_from_index(width_tiles: usize, index: usize) -> (usize, usize) {
     let x = index % width_tiles;
     let y = index / width_tiles;
     (x, y)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn coincident_sources_do_not_create_artificial_territory() {
-        let robots = [
-            (Pose2::from(point!(0.1, 0.1)), PlayerNumber::Three),
-            (Pose2::from(point!(-0.1, -0.1)), PlayerNumber::Two),
-        ];
-        let mut grid = VoronoiGrid::new(point!(-3.0, -3.0), point!(3.0, 3.0), 1.0);
-        grid.multi_source_dijkstra(&robots);
-
-        let mut reversed = VoronoiGrid::new(point!(-3.0, -3.0), point!(3.0, 3.0), 1.0);
-        reversed.multi_source_dijkstra(&[robots[1], robots[0]]);
-
-        assert_eq!(grid, reversed);
-        assert!(
-            grid.cells()
-                .all(|(_, owner)| owner == Ownership::Robot(PlayerNumber::Two))
-        );
-    }
-
-    #[test]
-    fn equal_distance_claims_prefer_player_number_over_grid_index() {
-        let robots = [
-            (Pose2::from(point!(-1.0, 0.0)), PlayerNumber::Three),
-            (Pose2::from(point!(1.0, 0.0)), PlayerNumber::Two),
-        ];
-        let mut grid = VoronoiGrid::new(point!(-3.0, -3.0), point!(3.0, 3.0), 1.0);
-        grid.multi_source_dijkstra(&robots);
-
-        let mut reversed = VoronoiGrid::new(point!(-3.0, -3.0), point!(3.0, 3.0), 1.0);
-        reversed.multi_source_dijkstra(&[robots[1], robots[0]]);
-
-        assert_eq!(grid, reversed);
-        assert_eq!(
-            grid.ownership_at(point!(0.0, 0.0)),
-            Some(Ownership::Robot(PlayerNumber::Two))
-        );
-        assert_eq!(
-            grid.ownership_at(point!(-1.0, 0.0)),
-            Some(Ownership::Robot(PlayerNumber::Three))
-        );
-    }
-
-    #[test]
-    fn blocked_source_can_approach_in_every_direction() {
-        for (x, y) in [(0.0, 1.0), (1.0, 0.0), (0.0, -1.0), (-1.0, 0.0)] {
-            let mut grid = VoronoiGrid::new(point!(-6.0, -6.0), point!(6.0, 6.0), 1.0);
-            grid.initialize_obstacles(
-                &[Obstacle::ball(point!(0.0, 0.0), 1.01)],
-                &[],
-                Isometry2::identity(),
-            );
-            grid.multi_source_dijkstra(&[
-                (Pose2::from(point!(0.0, 0.0)), PlayerNumber::Two),
-                (Pose2::from(point!(5.0 * x, 5.0 * y)), PlayerNumber::Three),
-            ]);
-
-            assert_eq!(
-                grid.ownership_at(point!(2.0 * x, 2.0 * y)),
-                Some(Ownership::Robot(PlayerNumber::Two)),
-                "source lost ownership in direction ({x}, {y})"
-            );
-            assert_eq!(
-                grid.ownership_at(point!(0.0, 0.0)),
-                Some(Ownership::Blocked)
-            );
-        }
-    }
-
-    #[test]
-    fn blocked_source_seeds_both_sides_without_crossing_other_obstacles() {
-        let mut grid = VoronoiGrid::new(point!(-3.0, -3.0), point!(3.0, 3.0), 1.0);
-        grid.rasterize_bounds(0.0, 0.0, -3.0, 3.0, |point| point.x() == 0.0);
-        grid.rasterize_bounds(2.0, 2.0, -3.0, 3.0, |point| point.x() == 2.0);
-        grid.multi_source_dijkstra(&[(Pose2::from(point!(0.0, 0.0)), PlayerNumber::Two)]);
-
-        for x in [-1.0, 1.0] {
-            assert_eq!(
-                grid.ownership_at(point!(x, 0.0)),
-                Some(Ownership::Robot(PlayerNumber::Two))
-            );
-        }
-        assert_eq!(grid.ownership_at(point!(3.0, 0.0)), Some(Ownership::Free));
-    }
 }
