@@ -18,6 +18,7 @@ use crate::{
     actions::stand,
     behavior_tree::Node,
     condition,
+    conditions::hulks_is_kicking_team,
     kick::{kick, select_kick_target, use_last_kick_power},
     node::Blackboard,
     selection, sequence, subtree,
@@ -218,24 +219,34 @@ pub fn walk_to_kickoff_pose(blackboard: &mut Blackboard) -> Status {
 
     let player_number = blackboard.world_state.robot.player_number;
     let standard_pose = blackboard.parameters.kickoff.standard_positions[player_number];
+    let striker_pose = blackboard.parameters.kickoff.striker_position;
+    let goalkeeper_player_number = blackboard.parameters.goalkeeper.player_number;
 
-    let target_position = if player_number == blackboard.parameters.goalkeeper.player_number {
-        standard_pose.position
-    } else {
-        blackboard
+    let highest_active_field_player_number = blackboard
+        .world_state
+        .player_states
+        .iter()
+        .filter_map(|(number, state)| state.is_some().then_some(number))
+        .chain(std::iter::once(player_number))
+        .filter(|number| *number != goalkeeper_player_number)
+        .max();
+
+    let target_position = match (player_number, hulks_is_kicking_team(blackboard)) {
+        (number, _) if number == goalkeeper_player_number => standard_pose.position,
+        (number, true) if Some(number) == highest_active_field_player_number => striker_pose,
+        _ => blackboard
             .voronoi_map
             .as_ref()
             .and_then(|map| {
                 target_player_position(
                     map,
                     player_number,
-                    // The ball will be placed at the center spot for kickoff.
-                    Some(Point2::origin()),
+                    None,
                     &blackboard.field_dimensions,
                     &blackboard.parameters.voronoi,
                 )
             })
-            .unwrap_or(standard_pose.position)
+            .unwrap_or(standard_pose.position),
     };
 
     let target_pose_in_field =
@@ -326,6 +337,7 @@ fn target_player_position(
     };
 
     let half_length = field_dimensions.length / 2.0 + parameters.padding;
+    let half_width = field_dimensions.width / 2.0 + parameters.padding;
     let ball_x = ball_position.x();
     let ball_y = ball_position.y();
     let side_factor = (ball_x / half_length).clamp(-1.0, 1.0);
@@ -344,6 +356,9 @@ fn target_player_position(
         let forward_norm = point.x() / half_length;
         let forward_term = parameters.forward_weight * side_factor * forward_norm;
 
+        let inward_norm = point.y().abs() / half_width;
+        let inward_term = parameters.inward_weight * (1.0 - inward_norm);
+
         let dx_ball = point.x() - ball_x;
         let dy_ball = point.y() - ball_y;
         let ball_distance = (dx_ball * dx_ball + dy_ball * dy_ball).sqrt();
@@ -357,7 +372,7 @@ fn target_player_position(
             * (dx_centroid * dx_centroid + dy_centroid * dy_centroid).sqrt()
             / centroid_sigma;
 
-        let score = forward_term + ball_term - centroid_penalty;
+        let score = forward_term + inward_term + ball_term - centroid_penalty;
         if best_target.is_none_or(|(best_score, _)| score > best_score) {
             best_target = Some((score, point));
         }

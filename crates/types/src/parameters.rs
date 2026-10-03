@@ -23,6 +23,7 @@ pub struct VoronoiParameters {
     pub grid_resolution: f32,
     pub padding: f32,
     pub forward_weight: f32,
+    pub inward_weight: f32,
     pub ball_weight: f32,
     pub ball_support_distance: f32,
     pub ball_support_sigma: f32,

@@ -20,17 +20,23 @@ fn three_vs_three_until_goal_or_half(app: &mut App) {
         .add_systems(Update, update.in_set(BehaviorTreeSimulatorSet::Scenario));
 }
 
-fn startup(mut commands: Commands, mut ball: ResMut<SimulatorBall>) {
+fn startup(
+    mut commands: Commands,
+    mut ball: ResMut<SimulatorBall>,
+    mut game_state: ResMut<SimulatorGameState>,
+) {
     let mut parameters =
         default_behavior_parameters().expect("failed to load default behavior parameters");
     parameters.goalkeeper.player_number = PlayerNumber::One;
     parameters.ball.last_ball_timeout = Duration::from_secs(2);
+    game_state.game_controller_state.game_state = GameState::Ready;
+    game_state.game_controller_state.kicking_team = Some(Team::Hulks);
 
     for (team, player_number, pose) in [
-        (Team::Hulks, PlayerNumber::Three, pose(-0.8, 0.0, 0.0)),
+        (Team::Hulks, PlayerNumber::One, pose(-0.8, 0.0, 0.0)),
         (Team::Hulks, PlayerNumber::Four, pose(-1.5, 1.0, 0.0)),
         (Team::Hulks, PlayerNumber::Five, pose(-1.5, -1.0, 0.0)),
-        (Team::Opponent, PlayerNumber::Three, pose(0.8, 0.0, PI)),
+        (Team::Opponent, PlayerNumber::One, pose(0.8, 0.0, PI)),
         (Team::Opponent, PlayerNumber::Four, pose(1.5, -1.0, PI)),
         (Team::Opponent, PlayerNumber::Five, pose(1.5, 1.0, PI)),
     ] {
@@ -64,7 +70,7 @@ fn update(
         .now
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("simulator time should not move backwards");
-    if hulks_score > 0 || opponent_score > 0 {
+    if hulks_score > 1 || opponent_score > 1 {
         println!(
             "result=goal elapsed={:.2} hulks_score={hulks_score} opponent_score={opponent_score}",
             elapsed.as_secs_f32()
