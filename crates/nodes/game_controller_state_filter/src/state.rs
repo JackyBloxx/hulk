@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use hsl_network_messages::{GamePhase, GameState, Team};
+use hsl_network_messages::{GamePhase, GameState, SubState, Team};
 use ros_z::time::Time;
 use serde::{Deserialize, Serialize};
 use types::{
@@ -48,8 +48,9 @@ impl State {
         ball_detected_far_from_kick_off_point: bool,
         config: &GameStateFilterParameters,
         filtered_kicking_team: Option<Team>,
+        filtered_sub_state: Option<SubState>,
     ) -> FilteredGameState {
-        let is_in_sub_state = game_controller_state.sub_state.is_some();
+        let is_in_sub_state = filtered_sub_state.is_some();
         let opponent_is_kicking_team = filtered_kicking_team != Some(team);
 
         match self {

@@ -152,6 +152,8 @@ pub struct GameStateFilterParameters {
     pub kick_off_grace_period: Duration,
     pub tentative_finish_duration: Duration,
     pub distance_to_consider_ball_moved_in_kick_off: f32,
+    /// Minimum filtered ball speed in m/s to consider a free kick taken.
+    pub ball_speed_threshold_for_free_kick: f32,
     pub whistle_acceptance_goal_distance: Vector2<Field>,
     pub duration_to_keep_observed_ball: Duration,
     pub duration_to_keep_new_penalties: Duration,

@@ -59,9 +59,8 @@ async fn run(ctx: Arc<Context>) -> Result<()> {
         .cache(1)
         .build()
         .await?;
-    let ball_state_cache = node
+    let ball_state_sub = node
         .subscriber::<Option<BallState>>("ball_state")
-        .cache(1)
         .build()
         .await?;
 
@@ -74,6 +73,8 @@ async fn run(ctx: Arc<Context>) -> Result<()> {
         .build()
         .await?;
 
+    let mut game_controller_state = None;
+    let mut current_ball_state = None;
     let mut latest_known_ball_state = None;
     let mut game_controller_state_filter = GameControllerStateFilter::default();
 
@@ -81,7 +82,28 @@ async fn run(ctx: Arc<Context>) -> Result<()> {
         let parameters_snapshot = parameters.snapshot();
         let parameters = parameters_snapshot.typed();
 
-        let Some(game_controller_state) = game_controller_state_sub.recv().await? else {
+        tokio::select! {
+            received_game_controller_state = game_controller_state_sub.recv() => {
+                game_controller_state = received_game_controller_state?;
+            }
+            received_ball_state = ball_state_sub.recv() => {
+                current_ball_state = received_ball_state?;
+                if let Some(ball_state) = current_ball_state {
+                    latest_known_ball_state = Some((node.clock().now(), ball_state));
+                }
+
+                // Only a newly detected kick needs a publication. Publishing on every
+                // ball update would feed back through the team ball filter and composer.
+                if !game_controller_state_filter.detect_free_kick_motion(
+                    &current_ball_state,
+                    parameters.ball_speed_threshold_for_free_kick,
+                ) {
+                    continue;
+                }
+            }
+        }
+
+        let Some(game_controller_state) = game_controller_state.as_ref() else {
             continue;
         };
 
@@ -94,19 +116,13 @@ async fn run(ctx: Arc<Context>) -> Result<()> {
 
         let filtered_whistle = filtered_whistle_cache.get_latest().unwrap_or_default();
 
-        let current_ball_state_time = ball_state_cache.latest_stamp();
-        let current_ball_state = ball_state_cache.get_latest().and_then(|maybe| *maybe);
-        if let Some((ball_state, time)) = current_ball_state_time.zip(current_ball_state) {
-            latest_known_ball_state = Some((ball_state, time))
-        };
-
         let filtered_game_controller_state = game_controller_state_filter
             .compute_filtered_game_controller_state(
                 node.clock().now(),
                 parameters,
                 &field_dimensions,
                 &player_number,
-                &game_controller_state,
+                game_controller_state,
                 &latest_known_ball_state,
                 &filtered_whistle,
                 &current_ball_state,
@@ -131,6 +147,8 @@ pub struct GameControllerStateFilter {
     state: State,
     opponent_state: State,
     last_game_controller_state: Option<GameControllerState>,
+    free_kick_started_at: Option<Time>,
+    ball_has_moved_in_free_kick: bool,
     whistle_in_set_ball_position: Option<Point2<Field>>,
     last_time_hulk_was_penalized: Option<Time>,
     last_time_opponent_was_penalized: Option<Time>,
@@ -194,6 +212,13 @@ impl GameControllerStateFilter {
             filtered_whistle,
         );
 
+        let sub_state = self.filter_sub_state(
+            now,
+            game_controller_state,
+            current_ball_state,
+            parameters.ball_speed_threshold_for_free_kick,
+        );
+
         let game_states = self.filter_game_states(
             &now,
             parameters,
@@ -205,7 +230,10 @@ impl GameControllerStateFilter {
             // visual_referee_proceed_to_ready,
             did_receive_motion_in_set_penalty,
             kicking_team,
+            sub_state,
         );
+
+        self.last_game_controller_state = Some(game_controller_state.clone());
 
         FilteredGameControllerState {
             game_state: game_states.own,
@@ -217,11 +245,75 @@ impl GameControllerStateFilter {
             remaining_number_of_messages: game_controller_state
                 .hulks_team
                 .remaining_amount_of_messages,
-            sub_state: game_controller_state.sub_state,
+            sub_state,
             global_field_side: game_controller_state.global_field_side,
             new_own_penalties_last_cycle,
             new_opponent_penalties_last_cycle,
         }
+    }
+
+    fn filter_sub_state(
+        &mut self,
+        now: Time,
+        game_controller_state: &GameControllerState,
+        current_ball_state: &Option<BallState>,
+        ball_speed_threshold: f32,
+    ) -> Option<SubState> {
+        let is_playing_free_kick = game_controller_state.game_state == GameState::Playing
+            && !game_controller_state.stopped
+            && matches!(
+                game_controller_state.sub_state,
+                Some(
+                    SubState::DirectFreeKick
+                        | SubState::IndirectFreeKick
+                        | SubState::ThrowIn
+                        | SubState::GoalKick
+                        | SubState::CornerKick
+                )
+            );
+        let restart_changed = self.last_game_controller_state.as_ref().is_none_or(|last| {
+            last.sub_state != game_controller_state.sub_state
+                || last.kicking_team != game_controller_state.kicking_team
+                || last.game_state != game_controller_state.game_state
+                || last.game_phase != game_controller_state.game_phase
+                || last.stopped != game_controller_state.stopped
+                || last.last_game_state_change != game_controller_state.last_game_state_change
+        });
+
+        if !is_playing_free_kick || restart_changed {
+            self.free_kick_started_at = None;
+            self.ball_has_moved_in_free_kick = false;
+        }
+
+        if is_playing_free_kick {
+            self.free_kick_started_at.get_or_insert(now);
+            self.detect_free_kick_motion(current_ball_state, ball_speed_threshold);
+        }
+
+        if self.ball_has_moved_in_free_kick {
+            None
+        } else {
+            game_controller_state.sub_state
+        }
+    }
+
+    fn detect_free_kick_motion(
+        &mut self,
+        current_ball_state: &Option<BallState>,
+        ball_speed_threshold: f32,
+    ) -> bool {
+        let (Some(started_at), Some(ball)) = (self.free_kick_started_at, current_ball_state) else {
+            return false;
+        };
+
+        if self.ball_has_moved_in_free_kick {
+            return false;
+        }
+
+        // A velocity left over from before this restart must not release the ball.
+        self.ball_has_moved_in_free_kick = ball.last_seen_ball > started_at.to_wallclock()
+            && ball.ball_in_ground_velocity.norm() > ball_speed_threshold;
+        self.ball_has_moved_in_free_kick
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -236,6 +328,7 @@ impl GameControllerStateFilter {
         filtered_whistle: &FilteredWhistle,
         did_receive_motion_in_set_penalty: bool,
         filtered_kicking_team: Option<Team>,
+        filtered_sub_state: Option<SubState>,
     ) -> FilteredGameStates {
         let ball_detected_far_from_any_goal = ball_detected_far_from_any_goal(
             current_ball_state,
@@ -292,6 +385,7 @@ impl GameControllerStateFilter {
             ball_detected_far_from_kick_off_point,
             parameters,
             filtered_kicking_team,
+            filtered_sub_state,
         );
 
         let filtered_opponent_game_state =
@@ -302,6 +396,7 @@ impl GameControllerStateFilter {
                 ball_detected_far_from_kick_off_point,
                 parameters,
                 filtered_kicking_team,
+                filtered_sub_state,
             );
 
         FilteredGameStates {
