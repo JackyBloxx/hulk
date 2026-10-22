@@ -7,11 +7,13 @@ use crate::{
     behavior_tree::Node,
     condition,
     conditions::{
-        has_ball_position, hulks_is_kicking_team, is_ball_free, is_ball_interception_candidate,
-        is_close_to_ball, is_closest_to_ball, is_controller_connected, is_fallen, is_goalkeeper,
-        is_kickoff, is_last_hulk_standing, is_primary_state, is_ready_for_stand_up,
-        is_remote_control_enabled, is_remote_kick_mode, is_simple, should_do_fall_protection,
+        has_at_least_players, has_ball_position, hulks_is_kicking_team, is_ball_free,
+        is_ball_interception_candidate, is_close_to_ball, is_closest_to_ball,
+        is_controller_connected, is_fallen, is_goalkeeper, is_kickoff, is_last_hulk_standing,
+        is_primary_state, is_ready_for_stand_up, is_remote_control_enabled, is_remote_kick_mode,
+        is_simple, should_do_fall_protection,
     },
+    defender::walk_to_defender_position,
     goalkeeper::goalkeeper_subtree,
     head::{look_around, look_at_ball_subtree, look_straight_ahead, search_for_lost_ball_subtree},
     kick::{intercept, kick, kick_subtree, set_kick_target_beyond_ball, use_kick},
@@ -167,7 +169,14 @@ pub(crate) fn striker_subtree() -> Node<Blackboard> {
 fn supporter_subtree() -> Node<Blackboard> {
     sequence!(
         subtree!(look_at_ball_subtree),
-        selection!(action!(walk_to_voronoi_position), action!(stand)),
+        selection!(
+            sequence!(
+                condition!(has_at_least_players, 4),
+                action!(walk_to_defender_position),
+            ),
+            action!(walk_to_voronoi_position),
+            action!(stand)
+        ),
     )
 }
 

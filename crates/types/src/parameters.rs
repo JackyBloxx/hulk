@@ -31,6 +31,12 @@ pub struct VoronoiParameters {
     pub relative_centroid_anchor_sigma: f32,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Message)]
+pub struct DefenderParameters {
+    pub relative_maximum_x: f32,
+    pub relative_switch_hysteresis: f32,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, Message)]
 pub struct BehaviorParameters {
     pub control: BehaviorControlParameters,
@@ -38,6 +44,7 @@ pub struct BehaviorParameters {
     pub walking: WalkingBehaviorParameters,
     pub kicking: KickingParameters,
     pub goalkeeper: GoalkeeperParameters,
+    pub defender: DefenderParameters,
     pub substates: SubstatesParameters,
     pub kickoff: KickoffParameters,
     pub voronoi: VoronoiParameters,

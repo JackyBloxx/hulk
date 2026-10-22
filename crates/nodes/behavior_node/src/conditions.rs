@@ -252,6 +252,18 @@ pub fn is_last_hulk_standing(blackboard: &mut Blackboard) -> bool {
         })
 }
 
+pub fn has_at_least_players(blackboard: &mut Blackboard, minimum_players: usize) -> bool {
+    blackboard
+        .world_state
+        .player_states
+        .iter()
+        .filter(|(player_number, player_state)| {
+            *player_number == blackboard.player_number || player_state.is_some()
+        })
+        .count()
+        >= minimum_players
+}
+
 pub fn is_simple(blackboard: &mut Blackboard) -> bool {
     blackboard.parameters.control.is_simple
 }

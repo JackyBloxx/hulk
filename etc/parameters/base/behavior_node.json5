@@ -79,6 +79,10 @@
     active_defense_maximum_robot_distance: 2.0,
     distance_to_goalpost: 0.15,
   },
+  defender: {
+    relative_maximum_x: -0.4,
+    relative_switch_hysteresis: 0.05,
+  },
   substates: {
     distance_for_kick: 0.4,
     distance_for_kick_hysteresis: 0.2,

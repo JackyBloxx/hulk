@@ -201,6 +201,7 @@ fn create_behavior_blackboard(
         last_closest_to_ball: false,
         closest_to_ball_entered_area_since: None,
         closest_to_ball_left_area_since: None,
+        defending_player: None,
         is_injected_motion_command: false,
         walk_position: None,
         body_motion: None,

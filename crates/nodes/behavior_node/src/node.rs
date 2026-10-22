@@ -84,6 +84,7 @@ pub struct Blackboard {
     pub last_closest_to_ball: bool,
     pub closest_to_ball_entered_area_since: Option<Time>,
     pub closest_to_ball_left_area_since: Option<Time>,
+    pub defending_player: Option<PlayerNumber>,
 
     pub is_injected_motion_command: bool,
     pub walk_position: Option<Point2<Ground>>,
@@ -356,6 +357,7 @@ pub async fn run(ctx: Arc<Context>) -> Result<()> {
         last_closest_to_ball: false,
         closest_to_ball_entered_area_since: None,
         closest_to_ball_left_area_since: None,
+        defending_player: None,
 
         is_injected_motion_command: false,
         walk_position: None,
