@@ -8,10 +8,11 @@ use crate::{
     condition,
     conditions::{
         has_ball_position, has_more_than_unpenalized_players, hulks_is_kicking_team, is_ball_free,
-        is_ball_interception_candidate, is_close_to_ball, is_closest_to_ball,
-        is_controller_connected, is_fallen, is_goalkeeper, is_kickoff, is_last_hulk_standing,
-        is_primary_state, is_ready_for_stand_up, is_remote_control_enabled, is_remote_kick_mode,
-        is_simple, is_stand_up_allowed, is_standing_up, should_do_fall_protection,
+        is_ball_interception_candidate, is_ball_outside_the_field, is_close_to_ball,
+        is_closest_to_ball, is_controller_connected, is_fallen, is_goalkeeper, is_kickoff,
+        is_last_hulk_standing, is_primary_state, is_ready_for_stand_up, is_remote_control_enabled,
+        is_remote_kick_mode, is_simple, is_stand_up_allowed, is_standing_up,
+        should_do_fall_protection,
     },
     goalkeeper::goalkeeper_subtree,
     head::{look_around, look_at_ball_subtree, look_straight_ahead, search_for_lost_ball_subtree},
@@ -121,31 +122,34 @@ fn playing_subtree() -> Node<Blackboard> {
             subtree!(penalty_shootout_subtree)
         ),
         sequence!(
-            selection!(condition!(is_simple), condition!(is_last_hulk_standing)),
-            selection!(
-                sequence!(
-                    negation!(condition!(has_ball_position)),
-                    subtree!(search_subtree)
-                ),
-                subtree!(striker_subtree)
-            )
-        ),
-        sequence!(condition!(is_goalkeeper), subtree!(goalkeeper_subtree)),
-        sequence!(
-            negation!(condition!(has_ball_position)),
-            subtree!(search_subtree)
+            condition!(is_goalkeeper),
+            negation!(condition!(is_last_hulk_standing)),
+            subtree!(goalkeeper_subtree)
         ),
         sequence!(
             selection!(
-                sequence!(
-                    condition!(hulks_is_kicking_team),
-                    condition!(is_in_sub_state),
-                    negation!(condition!(is_sub_state, SubState::GoalKick)),
-                    action!(calculate_voronoi_grid_without_goalkeeper),
-                ),
-                action!(calculate_voronoi_grid),
+                negation!(condition!(has_ball_position)),
+                condition!(is_ball_outside_the_field),
             ),
-            condition!(is_closest_to_ball),
+            subtree!(search_subtree),
+        ),
+        sequence!(
+            selection!(
+                condition!(is_simple),
+                condition!(is_last_hulk_standing),
+                sequence!(
+                    selection!(
+                        sequence!(
+                            condition!(hulks_is_kicking_team),
+                            condition!(is_in_sub_state),
+                            negation!(condition!(is_sub_state, SubState::GoalKick)),
+                            action!(calculate_voronoi_grid_without_goalkeeper),
+                        ),
+                        action!(calculate_voronoi_grid),
+                    ),
+                    condition!(is_closest_to_ball),
+                )
+            ),
             subtree!(striker_subtree),
         ),
         subtree!(supporter_subtree),

@@ -66,6 +66,7 @@ pub struct BallBehaviorParameters {
     pub team_ball_timeout: Duration,
     pub interception: InterceptBallParameters,
     pub closest_to_ball: ClosestToBallParameters,
+    pub outside_field_padding: f32,
 }
 
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, ros_z::Message)]

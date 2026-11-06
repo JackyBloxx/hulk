@@ -282,3 +282,11 @@ pub fn has_more_than_unpenalized_players(blackboard: &Blackboard, count: usize) 
 pub fn is_simple(blackboard: &mut Blackboard) -> bool {
     blackboard.parameters.control.is_simple
 }
+
+pub fn is_ball_outside_the_field(blackboard: &mut Blackboard) -> bool {
+    blackboard.ball.as_ref().is_some_and(|ball| {
+        let padding = blackboard.parameters.ball.outside_field_padding;
+        ball.position.x().abs() > blackboard.field_dimensions.length / 2.0 + padding
+            || ball.position.y().abs() > blackboard.field_dimensions.width / 2.0 + padding
+    })
+}
