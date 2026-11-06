@@ -31,7 +31,7 @@
         secs: 0,
       },
     },
-    outside_field_padding: 1.0,
+    outside_field_padding: 0.1,
   },
   walking: {
     path_planning: {
